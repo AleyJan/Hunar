@@ -13,8 +13,11 @@ import {
 } from 'react-native';
 import CustomButton from '../components/CustomButton';
 import CustomPopup from '../components/CustomPopup';
+import { useAuth } from '../context/AuthContext';
+import { parseRequest } from '../api/client';
 
 const ChatScreen = ({ navigation }) => {
+  const { currentUser } = useAuth();
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState([
     {
@@ -37,41 +40,54 @@ const ChatScreen = ({ navigation }) => {
     }
   }, [messages, isAnalyzing]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!inputText.trim()) {
       setPopupVisible(true);
       return;
     }
 
+    const currentText = inputText.trim();
     const userMsg = {
       id: Date.now().toString(),
       sender: 'user',
-      text: inputText.trim()
+      text: currentText
     };
 
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsAnalyzing(true);
 
-    // Simulate AI Agent processing delay and parameter extraction
-    setTimeout(() => {
+    try {
+      // Connect to global AI Parser using current user ID
+      const aiParseResult = await parseRequest(currentText, currentUser?.userId);
+      
       const aiResponse = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        text: 'Maine aapki requirement samajh li hai. Main best karigars dhund raha hoon.',
+        text: aiParseResult.responseText || "Maine aapki requirement samajh li hai. Main best karigars dhund raha hoon.",
         extractedData: {
-          service: 'AC Repair',
-          location: 'G-13'
+          service: aiParseResult.services?.[0] || aiParseResult.extracted?.services?.[0] || 'Unknown Service',
+          location: aiParseResult.location || aiParseResult.extracted?.location || 'Unknown Area'
         },
-        hasAction: true
+        hasAction: aiParseResult.confidence > 0.8 || aiParseResult.requirementsMet || true,
+        fullExtracted: aiParseResult.services ? { extracted: aiParseResult } : aiParseResult
       };
+      
       setMessages(prev => [...prev, aiResponse]);
+    } catch (error) {
+      const errorMsg = {
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: 'Error contacting AI. Dobara try karein.'
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
       setIsAnalyzing(false);
-    }, 3000);
+    }
   };
 
-  const handleFindKarigar = () => {
-    navigation.navigate('Matching');
+  const handleFindKarigar = (extracted) => {
+    navigation.navigate('Matching', { extracted });
   };
 
   const renderMessage = ({ item }) => {
@@ -97,7 +113,7 @@ const ChatScreen = ({ navigation }) => {
           {item.hasAction && (
             <CustomButton 
               title="Find Best Karigar" 
-              onPress={handleFindKarigar} 
+              onPress={() => handleFindKarigar(item.fullExtracted)} 
               style={styles.actionButton}
               textStyle={styles.actionButtonText}
             />

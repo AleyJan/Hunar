@@ -11,14 +11,18 @@ import {
 } from 'react-native';
 import CustomButton from '../components/CustomButton';
 import CustomPopup from '../components/CustomPopup';
+import { useAuth } from '../context/AuthContext';
 
 const SignInScreen = ({ navigation }) => {
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupConfig, setPopupConfig] = useState({ title: '', message: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSignIn = () => {
+  const { login } = useAuth();
+
+  const handleSignIn = async () => {
     // Error Protection: Validating inputs and using CustomPopup instead of Alert
     if (!emailOrPhone.trim() || !password.trim()) {
       setPopupConfig({
@@ -29,8 +33,20 @@ const SignInScreen = ({ navigation }) => {
       return;
     }
     
-    // Simulate successful sign in and replace route to Chat as the main app platform
-    navigation.replace('Chat');
+    setIsSubmitting(true);
+    try {
+      // Connect to global async dummy login
+      await login(emailOrPhone, password);
+      // Success auto-triggers AppNavigator to unmount SignIn and mount Chat entirely
+    } catch (error) {
+       setPopupConfig({
+         title: 'Login Error',
+         message: error.message || 'Apka login fail ho gaya.'
+       });
+       setPopupVisible(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSignUpNavigation = () => {
@@ -84,6 +100,7 @@ const SignInScreen = ({ navigation }) => {
           <CustomButton 
             title="Sign In" 
             onPress={handleSignIn} 
+            disabled={isSubmitting}
             style={styles.signInButton}
           />
 

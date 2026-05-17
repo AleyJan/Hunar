@@ -1,0 +1,18 @@
+# Ignore a specific file
+secrets.json
+
+# Ignore a specific folder and everything inside it
+node_modules/
+dist/
+
+# Ignore all files with a specific extension
+*.log
+*.tmp
+*.exe
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Use '!' to create an exception (don't ignore this specific file)
+!important.log

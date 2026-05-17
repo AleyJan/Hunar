@@ -12,10 +12,15 @@ import {
 } from 'react-native';
 import CustomButton from '../components/CustomButton';
 import CustomPopup from '../components/CustomPopup';
+import { useAuth } from '../context/AuthContext';
+import { submitFeedback } from '../api/client';
 
-const FeedbackScreen = ({ navigation }) => {
+const FeedbackScreen = ({ navigation, route }) => {
+  const { currentUser } = useAuth();
+  const { booking } = route.params || {};
   const [rating, setRating] = useState(0);
   const [reviewText, setReviewText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupConfig, setPopupConfig] = useState({ title: '', message: '', isSuccess: false });
 
@@ -28,7 +33,7 @@ const FeedbackScreen = ({ navigation }) => {
     navigation.navigate('Dispute');
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
     if (rating === 0) {
       setPopupConfig({
         title: 'Missing Rating',
@@ -39,13 +44,31 @@ const FeedbackScreen = ({ navigation }) => {
       return;
     }
 
-    // Trigger Success Custom Popup
-    setPopupConfig({
-      title: 'Success!',
-      message: 'Thank you for your feedback! Your review helps us maintain high quality standards.',
-      isSuccess: true
-    });
-    setPopupVisible(true);
+    setIsSubmitting(true);
+    try {
+      await submitFeedback(
+        booking?.id || 'BKG-dummy',
+        rating,
+        reviewText,
+        currentUser?.userId
+      );
+      
+      setPopupConfig({
+        title: 'Success!',
+        message: 'Thank you for your feedback! Your review helps us maintain high quality standards.',
+        isSuccess: true
+      });
+      setPopupVisible(true);
+    } catch (e) {
+      setPopupConfig({
+        title: 'Error',
+        message: 'Failed to submit review.',
+        isSuccess: false
+      });
+      setPopupVisible(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handlePopupClose = () => {
@@ -130,6 +153,7 @@ const FeedbackScreen = ({ navigation }) => {
               <CustomButton 
                 title="Submit Review" 
                 onPress={handleSubmitReview} 
+                disabled={isSubmitting}
                 style={styles.submitButton}
               />
             </View>

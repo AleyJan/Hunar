@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import CustomButton from '../components/CustomButton';
 import CustomPopup from '../components/CustomPopup';
+import { useAuth } from '../context/AuthContext';
 
 const SignUpScreen = ({ navigation }) => {
   const [fullName, setFullName] = useState('');
@@ -21,8 +22,11 @@ const SignUpScreen = ({ navigation }) => {
   
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupConfig, setPopupConfig] = useState({ title: '', message: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSignUp = () => {
+  const { signup } = useAuth();
+
+  const handleSignUp = async () => {
     // Validate all fields are filled
     if (!fullName.trim() || !emailOrPhone.trim() || !password.trim() || !confirmPassword.trim()) {
       setPopupConfig({
@@ -43,8 +47,20 @@ const SignUpScreen = ({ navigation }) => {
       return;
     }
 
-    // Simulate successful registration and replace route to Chat
-    navigation.replace('Chat');
+    setIsSubmitting(true);
+    try {
+      // Connect to global async dummy signup
+      await signup(fullName, emailOrPhone, password);
+      // Navigation boundary will organically unmount auth structure directly rendering Chat map
+    } catch (error) {
+       setPopupConfig({
+         title: 'Signup Error',
+         message: error.message || 'Apka signup fail ho gaya.'
+       });
+       setPopupVisible(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSignInNavigation = () => {
@@ -123,6 +139,7 @@ const SignUpScreen = ({ navigation }) => {
             <CustomButton 
               title="Sign Up" 
               onPress={handleSignUp} 
+              disabled={isSubmitting}
               style={styles.signUpButton}
             />
 
