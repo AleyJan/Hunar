@@ -1,11 +1,5 @@
-// ============================================================
-// HUNAR Agent Step 1 — src/agent/steps/intentParser.js
-// NLP intent understanding using Groq AI (llama-3.1-8b-instant)
-// ============================================================
-
 const Groq = require("groq-sdk");
 const { detectLanguage, detectUrgency, extractService, getClarifyingQuestion } = require("../../utils/languageUtils");
-const { MIN_CONFIDENCE } = require("../../config/constants");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -19,7 +13,7 @@ Return exactly this shape:
   "service": "one of: ac_repair, plumbing, electrical, carpentry, painting, cleaning, tutoring, appliance_repair, shifting, pest_control, mechanics",
   "sector": "Islamabad sector like G-13 or F-10, or null if not mentioned",
   "urgency": "high or medium or low",
-  "preferredTime": "tomorrow morning, today evening, ASAP, or null",
+  "preferredTime": "ASAP",
   "budgetSensitivity": "price_sensitive or normal or premium",
   "confidence": 0.0 to 1.0,
   "detectedLanguage": "english or roman_urdu or urdu or mixed",
@@ -34,15 +28,17 @@ Rules:
 - Always extract sector even if written as G13 or g-13 or G 13 — normalize to G-13 format
 - If user mentions 2+ services set multipleServices to true
 - Complexity: basic = cleaning/painting, intermediate = repair, complex = installation/overhaul
-- Confidence above 0.85 if service AND sector both found
-- Confidence 0.65-0.84 if only service found but no sector
-- Confidence below 0.65 if neither found clearly
-- Return ONLY the JSON object, nothing else`;
+- Confidence 0.95 if service AND sector both found
+- Confidence 0.75 if service found but no sector — this is SUFFICIENT to proceed
+- Confidence 0.50 if neither service nor sector found
+- preferredTime is ALWAYS set to "ASAP" — never null, never ask user for time
+- NEVER ask about time under any circumstances
+- Only ask ONE clarifying question maximum — only about service OR sector, never time
+- I8 and I-8 are the same sector — normalize all variants`;
 
 const intentParser = async (message, context = {}) => {
   const startTime = Date.now();
 
-  // Local pre-processing as backup
   const language = detectLanguage(message);
   const localUrgency = detectUrgency(message);
   const localService = extractService(message);
@@ -62,28 +58,37 @@ const intentParser = async (message, context = {}) => {
       max_tokens: 500,
     });
 
-    const text = completion.choices[0].message.content.trim();
-
-    // Strip markdown code blocks if model adds them
-    const cleaned = text
+    const text = completion.choices[0].message.content.trim()
       .replace(/```json\n?/g, "")
       .replace(/```\n?/g, "")
       .trim();
 
-    parsed = JSON.parse(cleaned);
+    parsed = JSON.parse(text);
     confidence = parsed.confidence || 0;
 
+    // Always default time to ASAP — never leave null
+    if (!parsed.preferredTime) parsed.preferredTime = "ASAP";
+
+    // Use user's saved sector if AI couldn't extract one
+    if (!parsed.sector && context.userSector) {
+      parsed.sector = context.userSector;
+      // Boost confidence since we now have sector
+      if (parsed.service && confidence < 0.75) {
+        parsed.confidence = 0.75;
+        confidence = 0.75;
+      }
+    }
+
   } catch (err) {
-    // Fallback to local parsing if Groq fails
     console.warn("⚠️  Groq API failed, using local parser:", err.message);
     usedFallback = true;
     parsed = {
       service: localService,
       sector: context.userSector || null,
       urgency: localUrgency,
-      preferredTime: null,
+      preferredTime: "ASAP",
       budgetSensitivity: "normal",
-      confidence: localService ? 0.65 : 0.4,
+      confidence: localService ? 0.75 : 0.4,
       detectedLanguage: language,
       correctedMessage: message,
       jobComplexity: "basic",
@@ -92,39 +97,37 @@ const intentParser = async (message, context = {}) => {
     confidence = parsed.confidence;
   }
 
-  // Confidence check — ask clarifying question if too low
-  const needsClarification = confidence < (MIN_CONFIDENCE || 0.7);
+  // Only ask clarifying question if BOTH service and sector are missing
+  // Never ask about time
+  const needsClarification = !parsed.service || (!parsed.sector && !context.userSector && confidence < 0.6);
   let clarifyingQuestion = null;
 
   if (needsClarification) {
-    const missingField = !parsed.service ? "service"
-      : !parsed.sector ? "location"
-        : "time";
+    const missingField = !parsed.service ? "service" : "location";
     clarifyingQuestion = getClarifyingQuestion(
       parsed.detectedLanguage || language,
       missingField
     );
   }
 
-  // Reasoning trace — saved for judge review
   const trace = {
     step: "INTENT_UNDERSTANDING",
     input: { message, context },
     reasoning:
       `Detected language: ${parsed.detectedLanguage || language}. ` +
-      `Local service extraction: ${localService || "none"}. ` +
-      `Urgency signals: ${localUrgency}. ` +
+      `Service: ${parsed.service || "none"}. ` +
+      `Sector: ${parsed.sector || "none"}. ` +
       `Groq confidence: ${confidence}. ` +
       (needsClarification
-        ? `Confidence below threshold. Clarification required.`
-        : `Confidence above threshold. Proceeding to provider matching.`),
+        ? `Clarification needed — missing ${!parsed.service ? "service" : "location"}.`
+        : `Proceeding to provider matching.`),
     decision: needsClarification
       ? `Ask clarifying question: "${clarifyingQuestion}"`
-      : `Parsed intent. Service: ${parsed.service}, Sector: ${parsed.sector}, Urgency: ${parsed.urgency}`,
+      : `Intent parsed. Service: ${parsed.service}, Sector: ${parsed.sector}, Urgency: ${parsed.urgency}`,
     confidence,
     fallback_considered: usedFallback
       ? "Groq API failed — used local keyword parser"
-      : "Groq API used successfully — no fallback needed",
+      : "Groq API used — no fallback needed",
     output: parsed,
     durationMs: Date.now() - startTime,
   };
