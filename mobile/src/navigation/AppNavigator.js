@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -6,7 +6,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { THEME } from '../constants/theme';
 import { ActivityIndicator, View } from 'react-native';
+import api from '../services/api';
 
+import ProviderDashboard from '../screens/provider/ProviderDashboard';
+import ProviderJobDetail from '../screens/provider/ProviderJobDetail';
 import WelcomeScreen from '../screens/common/WelcomeScreen';
 import LoginScreen from '../screens/common/LoginScreen';
 import RegisterScreen from '../screens/common/RegisterScreen';
@@ -33,6 +36,25 @@ function AuthStack() {
 }
 
 function ClientTabs() {
+    const [bookingBadge, setBookingBadge] = useState(0);
+
+    useEffect(() => {
+        const fetchBadge = async () => {
+            try {
+                const res = await api.get('/book/my-bookings');
+                const bookings = res.data.data || [];
+                // Badge = cancelled bookings with suggested slots (actionable)
+                const actionable = bookings.filter(b =>
+                    b.status === 'provider_cancelled' && b.suggestedSlots?.length > 0
+                ).length;
+                setBookingBadge(actionable);
+            } catch (err) { }
+        };
+        fetchBadge();
+        const interval = setInterval(fetchBadge, 20000);
+        return () => clearInterval(interval);
+    }, []);
+
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({
@@ -51,7 +73,14 @@ function ClientTabs() {
             })}
         >
             <Tab.Screen name="AI Assistant" component={AIRequestHub} />
-            <Tab.Screen name="My Bookings" component={TrackingScreen} />
+            <Tab.Screen
+                name="My Bookings"
+                component={TrackingScreen}
+                options={{
+                    tabBarBadge: bookingBadge > 0 ? bookingBadge : undefined,
+                    tabBarBadgeStyle: { backgroundColor: THEME.colors.urgencyHigh, fontSize: 10 },
+                }}
+            />
             <Tab.Screen name="Disputes" component={DisputeScreen} />
         </Tab.Navigator>
     );
@@ -70,8 +99,17 @@ function AppStack() {
     );
 }
 
+function ProviderStack() {
+    return (
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="ProviderDashboard" component={ProviderDashboard} />
+            <Stack.Screen name="ProviderJobDetail" component={ProviderJobDetail} />
+        </Stack.Navigator>
+    );
+}
+
 export default function AppNavigator() {
-    const { token, loading } = useAuth();
+    const { token, loading, user } = useAuth();
 
     if (loading) {
         return (
@@ -82,8 +120,14 @@ export default function AppNavigator() {
     }
 
     return (
-        <NavigationContainer>
-            {token ? <AppStack /> : <AuthStack />}
+        <NavigationContainer key={token ? 'logged-in' : 'logged-out'}>
+            {!token ? (
+                <AuthStack />
+            ) : user?.role === 'provider' ? (
+                <ProviderStack />
+            ) : (
+                <AppStack />
+            )}
         </NavigationContainer>
     );
 }

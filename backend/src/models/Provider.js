@@ -58,6 +58,7 @@ const providerSchema = new mongoose.Schema(
     lastReviewDate: { type: Date },
 
     isActive: { type: Boolean, default: true },
+    password: { type: String, select: false },
   },
   { timestamps: true }
 );

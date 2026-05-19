@@ -61,7 +61,7 @@ export default function BookingConfirmedScreen({ navigation, route }) {
                         { icon: 'calendar-outline', label: 'Time', value: booking?.scheduledAt ? new Date(booking.scheduledAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' }) : 'Tomorrow' },
                         { icon: 'location-outline', label: 'Location', value: booking?.sector },
                         { icon: 'cash-outline', label: 'Total', value: `Rs. ${booking?.pricing?.totalAmount || 0}` },
-                        { icon: 'time-outline', label: 'Status', value: 'Confirmed ✓' },
+                        { icon: 'time-outline', label: 'Status', value: booking?.status === 'pending' ? '⏳ Awaiting Provider' : 'Confirmed ✓' },
                     ].map((item, i) => (
                         <View key={i} style={styles.detailRow}>
                             <View style={styles.detailLeft}>

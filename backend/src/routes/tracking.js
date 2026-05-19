@@ -7,15 +7,12 @@ const express = require("express");
 const { protect } = require("../middleware/auth");
 const Booking = require("../models/Booking");
 const qualityLoop = require("../agent/steps/qualityLoop");
-const { STATUS_FLOW } = require("../config/constants");
 const router = express.Router();
 
 const VALID_STATUSES = ["en_route", "arrived", "in_progress", "completed"];
 
-// ── Status progression based on time since booking ──────────
 const getAutoStatus = (createdAt) => {
   const minutesElapsed = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60);
-
   if (minutesElapsed < 3) return { status: "confirmed", message: "Booking confirmed — provider will be assigned shortly" };
   if (minutesElapsed < 7) return { status: "en_route", message: "Provider is on the way to your location" };
   if (minutesElapsed < 12) return { status: "arrived", message: "Provider has arrived at your location" };
@@ -33,12 +30,33 @@ router.get("/:bookingId", protect, async (req, res, next) => {
     if (!booking)
       return res.status(404).json({ status: "error", message: "Booking not found" });
 
-    // Auto-progress status based on time
+    // If pending — hold tracking, don't auto progress
+    if (booking.status === "pending") {
+      return res.json({
+        status: "success",
+        data: {
+          bookingId: req.params.bookingId,
+          currentStatus: "pending",
+          statusMessage: "Provider ne abhi accept nahi kiya",
+          eta: "Awaiting provider confirmation",
+          provider: booking.providerId,
+          serviceType: booking.serviceType,
+          completionChecklist: null,
+          agentTrace: {
+            step: "SERVICE_QUALITY_LOOP",
+            reasoning: "Booking is pending provider acceptance",
+            decision: "Hold tracking until provider accepts",
+            confidence: 1.0,
+          },
+        },
+      });
+    }
+
+    // Auto-progress status based on time since confirmation
     const autoStatus = getAutoStatus(booking.confirmedAt || booking.createdAt);
 
     // Update status in DB if it has progressed
-    if (autoStatus.status !== booking.status &&
-      VALID_STATUSES.includes(autoStatus.status)) {
+    if (autoStatus.status !== booking.status && VALID_STATUSES.includes(autoStatus.status)) {
       booking.status = autoStatus.status;
       if (autoStatus.status === "completed") booking.completedAt = new Date();
       await booking.save();
@@ -46,7 +64,7 @@ router.get("/:bookingId", protect, async (req, res, next) => {
 
     const currentStatus = autoStatus.status;
 
-    // ── Completion checklist (shown when status is completed) ──
+    // Completion checklist
     let completionChecklist = null;
     if (currentStatus === "completed") {
       completionChecklist = {
@@ -62,12 +80,10 @@ router.get("/:bookingId", protect, async (req, res, next) => {
       };
     }
 
-    // ── Simulated provider location (moves toward user over time) ─
     const providerLocation = currentStatus === "en_route"
       ? { lat: booking.providerId?.lat || 33.69, lng: booking.providerId?.lng || 73.05, moving: true }
       : null;
 
-    // ── ETA calculation ───────────────────────────────────────
     const etaMap = {
       confirmed: "Confirming provider...",
       en_route: "~12 minutes away",
@@ -76,7 +92,6 @@ router.get("/:bookingId", protect, async (req, res, next) => {
       completed: "Done ✅",
     };
 
-    // ── Agent trace ───────────────────────────────────────────
     const trace = {
       step: "SERVICE_QUALITY_LOOP",
       reasoning: `Booking ${req.params.bookingId} status: ${currentStatus}. ${autoStatus.message}.`,

@@ -13,7 +13,7 @@ const ISSUE_TYPES = [
     { key: 'overcharge', label: 'Price Dispute', icon: 'cash-outline' },
     { key: 'poor_quality', label: 'Poor Quality', icon: 'thumbs-down-outline' },
     { key: 'no_show', label: 'No Show', icon: 'person-remove-outline' },
-    { key: 'late_arrival', label: 'Late Arrival', icon: 'time-outline' },
+    { key: 'rude_behavior', label: 'Rude Behavior', icon: 'time-outline' },
     { key: 'overrun', label: 'Work Overrun', icon: 'alert-circle-outline' },
     { key: 'other', label: 'Other Issue', icon: 'ellipsis-horizontal' },
 ];
@@ -27,7 +27,8 @@ export default function FeedbackScreen({ navigation, route }) {
     const [selectedIssue, setSelectedIssue] = useState(null);
     const [showDispute, setShowDispute] = useState(false);
     const [disputeDesc, setDisputeDesc] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [feedbackLoading, setFeedbackLoading] = useState(false);
+    const [disputeLoading, setDisputeLoading] = useState(false);
     const [disputeResult, setDisputeResult] = useState(null);
 
     const ratingLabels = ['', 'Bohat Bura', 'Bura', 'Theek Tha', 'Acha', 'Bohat Acha!'];
@@ -37,14 +38,9 @@ export default function FeedbackScreen({ navigation, route }) {
             Alert.alert('Rating Zaroor Dein', 'Pehle stars select karein');
             return;
         }
-        setLoading(true);
+        setFeedbackLoading(true);
         try {
-            await serviceAPI.submitFeedback(booking?.bookingId, {
-                rating,
-                review,
-                userId: user?.id,
-            });
-
+            await serviceAPI.submitFeedback(booking?.bookingId, { rating, review, userId: user?.id });
             Alert.alert(
                 'Shukriya! 🙏',
                 'Aapka feedback save ho gaya. Provider ki reputation update ho gayi.',
@@ -53,11 +49,16 @@ export default function FeedbackScreen({ navigation, route }) {
         } catch (err) {
             Alert.alert('Error', 'Feedback submit nahi hua. Try again.');
         } finally {
-            setLoading(false);
+            setFeedbackLoading(false);
         }
     };
 
     const handleSubmitDispute = async () => {
+        console.log('Submit dispute tapped');
+        console.log('selectedIssue:', selectedIssue);
+        console.log('disputeDesc:', disputeDesc);
+        console.log('bookingId:', booking?.bookingId);
+
         if (!selectedIssue) {
             Alert.alert('Issue Select Karein', 'Pehle masla select karein');
             return;
@@ -66,20 +67,23 @@ export default function FeedbackScreen({ navigation, route }) {
             Alert.alert('Description Zaroor Hai', 'Masle ka description likhen');
             return;
         }
-        setLoading(true);
+        setDisputeLoading(true);
         try {
+            console.log('Calling raiseDispute API...');
             const res = await serviceAPI.raiseDispute({
                 bookingId: booking?.bookingId,
                 issueType: selectedIssue,
                 description: disputeDesc,
                 userId: user?.id,
             });
-            const data = res.data.data;
-            setDisputeResult(data);
+            console.log('Dispute success:', JSON.stringify(res.data));
+            setDisputeResult(res.data.data);
         } catch (err) {
-            Alert.alert('Error', 'Dispute submit nahi hua.');
+            console.log('Dispute error full:', JSON.stringify(err.response?.data));
+            console.log('Dispute error msg:', err.message);
+            Alert.alert('Error', err.response?.data?.message || 'Dispute submit nahi hua. Try again.');
         } finally {
-            setLoading(false);
+            setDisputeLoading(false);
         }
     };
 
@@ -92,16 +96,17 @@ export default function FeedbackScreen({ navigation, route }) {
                 </View>
                 <ScrollView contentContainerStyle={styles.content}>
                     <View style={styles.disputeResultCard}>
-                        <View style={styles.disputeIconRow}>
-                            <Ionicons name="shield-checkmark" size={48} color={THEME.colors.primary} />
-                        </View>
+                        <Ionicons name="shield-checkmark" size={56} color={THEME.colors.primary} />
                         <Text style={styles.disputeResolution}>
-                            Resolution: {disputeResult.resolution?.replace(/_/g, ' ').toUpperCase()}
+                            {disputeResult.resolution?.replace(/_/g, ' ').toUpperCase()}
                         </Text>
+                        {disputeResult.refundPercentage > 0 && (
+                            <View style={styles.refundBadge}>
+                                <Text style={styles.refundPct}>{disputeResult.refundPercentage}% Refund</Text>
+                            </View>
+                        )}
                         {disputeResult.resolutionAmount > 0 && (
-                            <Text style={styles.disputeAmount}>
-                                Refund: Rs. {disputeResult.resolutionAmount}
-                            </Text>
+                            <Text style={styles.disputeAmount}>Rs. {disputeResult.resolutionAmount}</Text>
                         )}
                         <Text style={styles.disputeMessage}>
                             {disputeResult.actionMessage || disputeResult.resolutionReason}
@@ -109,17 +114,24 @@ export default function FeedbackScreen({ navigation, route }) {
 
                         {disputeResult.trace && (
                             <View style={styles.traceBox}>
-                                <Text style={styles.traceTitle}>AI Mediator Reasoning</Text>
+                                <Text style={styles.traceTitle}>🤖 AI Mediator Reasoning</Text>
                                 <Text style={styles.traceText}>{disputeResult.trace.reasoning}</Text>
                             </View>
                         )}
+
+                        <View style={styles.nextStepBox}>
+                            <Ionicons name="information-circle-outline" size={16} color={THEME.colors.primary} />
+                            <Text style={styles.nextStepText}>
+                                Provider ko 24 ghante mein respond karna hoga. Agar reject kiya toh HUNAR team review karegi.
+                            </Text>
+                        </View>
                     </View>
 
                     <TouchableOpacity
                         style={styles.submitBtn}
                         onPress={() => navigation.reset({ index: 0, routes: [{ name: 'ClientTabs' }] })}
                     >
-                        <Text style={styles.submitBtnText}>Ghar Wapas Jao</Text>
+                        <Text style={styles.submitBtnText}>Dashboard pe Wapas Jao</Text>
                     </TouchableOpacity>
                 </ScrollView>
             </View>
@@ -142,7 +154,6 @@ export default function FeedbackScreen({ navigation, route }) {
 
             <ScrollView contentContainerStyle={styles.content}>
 
-                {/* Star Rating */}
                 <View style={styles.ratingCard}>
                     <Text style={styles.ratingQuestion}>Service kaisi thi?</Text>
                     <View style={styles.starsRow}>
@@ -156,12 +167,9 @@ export default function FeedbackScreen({ navigation, route }) {
                             </TouchableOpacity>
                         ))}
                     </View>
-                    {rating > 0 && (
-                        <Text style={styles.ratingLabel}>{ratingLabels[rating]}</Text>
-                    )}
+                    {rating > 0 && <Text style={styles.ratingLabel}>{ratingLabels[rating]}</Text>}
                 </View>
 
-                {/* Written Review */}
                 <View style={styles.reviewCard}>
                     <Text style={styles.sectionTitle}>Apni Rai Likhen (optional)</Text>
                     <TextInput
@@ -177,13 +185,12 @@ export default function FeedbackScreen({ navigation, route }) {
                     <Text style={styles.charCount}>{review.length}/300</Text>
                 </View>
 
-                {/* Submit Feedback */}
                 <TouchableOpacity
-                    style={[styles.submitBtn, (loading || rating === 0) && { opacity: 0.6 }]}
+                    style={[styles.submitBtn, (feedbackLoading || rating === 0) && { opacity: 0.6 }]}
                     onPress={handleSubmitFeedback}
-                    disabled={loading || rating === 0}
+                    disabled={feedbackLoading || rating === 0}
                 >
-                    {loading && !showDispute ? (
+                    {feedbackLoading ? (
                         <ActivityIndicator color={THEME.colors.white} />
                     ) : (
                         <>
@@ -193,7 +200,6 @@ export default function FeedbackScreen({ navigation, route }) {
                     )}
                 </TouchableOpacity>
 
-                {/* Dispute Section */}
                 <TouchableOpacity
                     style={styles.disputeToggle}
                     onPress={() => setShowDispute(!showDispute)}
@@ -215,10 +221,7 @@ export default function FeedbackScreen({ navigation, route }) {
                             {ISSUE_TYPES.map(issue => (
                                 <TouchableOpacity
                                     key={issue.key}
-                                    style={[
-                                        styles.issueChip,
-                                        selectedIssue === issue.key && styles.issueChipActive,
-                                    ]}
+                                    style={[styles.issueChip, selectedIssue === issue.key && styles.issueChipActive]}
                                     onPress={() => setSelectedIssue(issue.key)}
                                 >
                                     <Ionicons
@@ -226,19 +229,14 @@ export default function FeedbackScreen({ navigation, route }) {
                                         size={16}
                                         color={selectedIssue === issue.key ? THEME.colors.white : THEME.colors.urgencyHigh}
                                     />
-                                    <Text style={[
-                                        styles.issueText,
-                                        selectedIssue === issue.key && styles.issueTextActive,
-                                    ]}>
+                                    <Text style={[styles.issueText, selectedIssue === issue.key && styles.issueTextActive]}>
                                         {issue.label}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
 
-                        <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
-                            Masle ki Detail Likhen
-                        </Text>
+                        <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Masle ki Detail Likhen</Text>
                         <TextInput
                             style={styles.reviewInput}
                             value={disputeDesc}
@@ -252,16 +250,16 @@ export default function FeedbackScreen({ navigation, route }) {
                         <View style={styles.aiNote}>
                             <Ionicons name="bulb-outline" size={16} color={THEME.colors.accent} />
                             <Text style={styles.aiNoteText}>
-                                Groq AI aapka dispute analyze karega aur fair decision dega
+                                Groq AI aapka dispute analyze karega aur fair refund percentage decide karega. Provider ko 24 ghante mein respond karna hoga.
                             </Text>
                         </View>
 
                         <TouchableOpacity
-                            style={[styles.disputeBtn, loading && { opacity: 0.6 }]}
+                            style={[styles.disputeBtn, disputeLoading && { opacity: 0.6 }]}
                             onPress={handleSubmitDispute}
-                            disabled={loading}
+                            disabled={disputeLoading}
                         >
-                            {loading && showDispute ? (
+                            {disputeLoading ? (
                                 <ActivityIndicator color={THEME.colors.white} />
                             ) : (
                                 <>
@@ -286,40 +284,28 @@ const styles = StyleSheet.create({
     },
     headerTitle: { fontSize: 16, fontWeight: '800', color: THEME.colors.white },
     headerSub: { fontSize: 12, color: THEME.colors.accent, marginTop: 2 },
-
     content: { padding: 16, gap: 16, paddingBottom: 40 },
 
     ratingCard: {
-        backgroundColor: THEME.colors.white,
-        borderRadius: 16, padding: 20,
-        alignItems: 'center',
-        ...THEME.shadows.premium,
+        backgroundColor: THEME.colors.white, borderRadius: 16, padding: 20,
+        alignItems: 'center', ...THEME.shadows.premium,
     },
     ratingQuestion: { fontSize: 18, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 16 },
     starsRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
     ratingLabel: { fontSize: 16, fontWeight: '700', color: THEME.colors.accent },
 
-    reviewCard: {
-        backgroundColor: THEME.colors.white,
-        borderRadius: 16, padding: 16,
-        ...THEME.shadows.premium,
-    },
+    reviewCard: { backgroundColor: THEME.colors.white, borderRadius: 16, padding: 16, ...THEME.shadows.premium },
     sectionTitle: { fontSize: 14, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 10 },
     reviewInput: {
-        backgroundColor: THEME.colors.bgLight,
-        borderRadius: 12, padding: 12,
-        fontSize: 14, color: THEME.colors.textDark,
-        textAlignVertical: 'top',
-        minHeight: 90,
-        borderWidth: 1, borderColor: THEME.colors.border,
+        backgroundColor: THEME.colors.bgLight, borderRadius: 12, padding: 12,
+        fontSize: 14, color: THEME.colors.textDark, textAlignVertical: 'top',
+        minHeight: 90, borderWidth: 1, borderColor: THEME.colors.border,
     },
     charCount: { fontSize: 11, color: THEME.colors.textMuted, textAlign: 'right', marginTop: 4 },
 
     submitBtn: {
-        backgroundColor: THEME.colors.primary,
-        borderRadius: 14, paddingVertical: 16,
-        flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'center', gap: 10,
+        backgroundColor: THEME.colors.primary, borderRadius: 14, paddingVertical: 16,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
         ...THEME.shadows.float,
     },
     submitBtnText: { color: THEME.colors.white, fontSize: 15, fontWeight: '800' },
@@ -331,18 +317,14 @@ const styles = StyleSheet.create({
     disputeToggleText: { color: THEME.colors.urgencyHigh, fontSize: 14, fontWeight: '600' },
 
     disputeCard: {
-        backgroundColor: THEME.colors.white,
-        borderRadius: 16, padding: 16,
-        borderWidth: 1, borderColor: THEME.colors.urgencyHigh,
-        ...THEME.shadows.premium,
+        backgroundColor: THEME.colors.white, borderRadius: 16, padding: 16,
+        borderWidth: 1, borderColor: THEME.colors.urgencyHigh, ...THEME.shadows.premium,
     },
     issueGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     issueChip: {
         flexDirection: 'row', alignItems: 'center', gap: 6,
-        paddingHorizontal: 12, paddingVertical: 8,
-        borderRadius: 20, borderWidth: 1.5,
-        borderColor: THEME.colors.urgencyHigh,
-        backgroundColor: THEME.colors.white,
+        paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+        borderWidth: 1.5, borderColor: THEME.colors.urgencyHigh, backgroundColor: THEME.colors.white,
     },
     issueChipActive: { backgroundColor: THEME.colors.urgencyHigh },
     issueText: { fontSize: 12, color: THEME.colors.urgencyHigh, fontWeight: '600' },
@@ -350,33 +332,31 @@ const styles = StyleSheet.create({
 
     aiNote: {
         flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-        backgroundColor: THEME.colors.accentLight,
-        borderRadius: 10, padding: 10, marginTop: 12,
+        backgroundColor: '#FFF8E7', borderRadius: 10, padding: 10, marginTop: 12,
     },
     aiNoteText: { fontSize: 12, color: THEME.colors.textDark, flex: 1, lineHeight: 18 },
 
     disputeBtn: {
-        backgroundColor: THEME.colors.urgencyHigh,
-        borderRadius: 14, paddingVertical: 14,
-        flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'center', gap: 8, marginTop: 14,
+        backgroundColor: THEME.colors.urgencyHigh, borderRadius: 14, paddingVertical: 14,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14,
     },
     disputeBtnText: { color: THEME.colors.white, fontSize: 14, fontWeight: '700' },
 
     disputeResultCard: {
-        backgroundColor: THEME.colors.white,
-        borderRadius: 16, padding: 24,
-        alignItems: 'center', gap: 12,
-        ...THEME.shadows.premium,
+        backgroundColor: THEME.colors.white, borderRadius: 16, padding: 24,
+        alignItems: 'center', gap: 12, ...THEME.shadows.premium,
     },
-    disputeIconRow: { marginBottom: 8 },
     disputeResolution: { fontSize: 18, fontWeight: '900', color: THEME.colors.textDark, textAlign: 'center' },
-    disputeAmount: { fontSize: 22, fontWeight: '900', color: THEME.colors.primary },
-    disputeMessage: { fontSize: 14, color: THEME.colors.textMuted, textAlign: 'center', lineHeight: 22 },
-    traceBox: {
-        backgroundColor: '#1E293B', borderRadius: 12,
-        padding: 14, width: '100%', marginTop: 8,
-    },
+    refundBadge: { backgroundColor: THEME.colors.primaryLight, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 },
+    refundPct: { fontSize: 16, fontWeight: '800', color: THEME.colors.primary },
+    disputeAmount: { fontSize: 26, fontWeight: '900', color: THEME.colors.primary },
+    disputeMessage: { fontSize: 13, color: THEME.colors.textMuted, textAlign: 'center', lineHeight: 20 },
+    traceBox: { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, width: '100%' },
     traceTitle: { color: THEME.colors.accent, fontSize: 12, fontWeight: '700', marginBottom: 8 },
-    traceText: { color: '#CBD5E1', fontSize: 12, lineHeight: 18 },
+    traceText: { color: '#CBD5E1', fontSize: 11, lineHeight: 18 },
+    nextStepBox: {
+        flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+        backgroundColor: THEME.colors.primaryLight, borderRadius: 10, padding: 10, width: '100%',
+    },
+    nextStepText: { fontSize: 12, color: THEME.colors.primaryDark, flex: 1, lineHeight: 18 },
 });

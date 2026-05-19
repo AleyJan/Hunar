@@ -25,6 +25,7 @@ const notificationSchema = new mongoose.Schema(
         "booking_cancelled",
         "reminder",
         "dispute_resolved",
+        "dispute_filed",
         "rating_request",
       ],
       required: true,
@@ -42,6 +43,7 @@ const notificationSchema = new mongoose.Schema(
       default: "simulated",
     },
     sentAt: { type: Date, default: Date.now },
+    read: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -20,8 +20,7 @@ const saveBooking = async (bookingData) => {
   const booking = await Booking.create({
     bookingId,
     ...bookingData,
-    status: "confirmed",
-    confirmedAt: new Date(),
+    status: "pending",
   });
 
   // Increment provider workload counter

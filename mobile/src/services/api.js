@@ -1,10 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Change this to your backend URL
-// For local testing use your laptop IP
-// For production use Railway URL
-const API_URL = 'http://192.168.1.6:5000/api';
+const API_URL = 'http://192.168.1.3:5000/api';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -12,7 +9,6 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
-// Auto attach JWT token to every request
 api.interceptors.request.use(
     async (config) => {
         const token = await AsyncStorage.getItem('user_token');
@@ -37,6 +33,18 @@ export const serviceAPI = {
     updateTracking: (bookingId, status) => api.patch(`/tracking/${bookingId}`, { status }),
     submitFeedback: (bookingId, data) => api.post(`/feedback/${bookingId}`, data),
     raiseDispute: (disputeData) => api.post('/dispute', disputeData),
+    getBookedSlots: (providerId, date) => api.get(`/book/slots/${providerId}/${date}`),
+};
+
+export const providerAPI = {
+    getBookings: () => api.get('/provider/bookings'),
+    acceptBooking: (bookingId) => api.patch(`/provider/bookings/${bookingId}/accept`),
+    rejectBooking: (bookingId, payload) => api.patch(`/provider/bookings/${bookingId}/reject`, payload),
+    getNotifications: () => api.get('/provider/notifications'),
+};
+
+export const userNotificationAPI = {
+    getNotifications: () => api.get('/provider/user/notifications'),
 };
 
 export default api;

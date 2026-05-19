@@ -1,57 +1,37 @@
 // ============================================================
-// HUNAR — src/models/Dispute.js
+// HUNAR Tool — src/tools/saveDispute.js
 // ============================================================
-const mongoose = require("mongoose");
+const Dispute = require("../models/Dispute");
 
-const disputeSchema = new mongoose.Schema(
-  {
-    bookingId: {
-      type: String,
-      required: true,
-    },
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    providerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Provider",
-      required: true,
-    },
-    issueType: {
-      type: String,
-      enum: ["overcharge", "no_show", "poor_quality", "rude_behavior", "other"],
-      required: true,
-    },
-    description: {
-      type: String,
-      required: true,
-      maxlength: 1000,
-    },
-    resolution: {
-      type: String,
-      enum: [
-        "refund",
-        "partial_refund",
-        "compensation",
-        "warning",
-        "blacklist",
-        "escalate_to_human",
-        "no_action",
-      ],
-    },
-    resolutionReason: { type: String },
-    resolutionAmount: { type: Number, default: 0 },
-    status: {
-      type: String,
-      enum: ["open", "under_review", "resolved", "escalated"],
-      default: "open",
-    },
-    reasoningTraceId: { type: String },
-    resolvedAt: { type: Date },
-  },
-  { timestamps: true }
-);
+const saveDispute = async ({
+  bookingId,
+  userId,
+  providerId,
+  issueType,
+  description,
+  resolution,
+  resolutionReason,
+  resolutionAmount,
+  refundPercentage,
+  aiReasoning,
+  status,
+}) => {
+  const dispute = await Dispute.create({
+    bookingId,
+    userId,
+    providerId,
+    issueType,
+    description,
+    resolution,
+    resolutionReason,
+    resolutionAmount: resolutionAmount || 0,
+    refundPercentage: refundPercentage || 0,
+    aiReasoning,
+    status: status || 'ai_resolved',
+    resolvedAt: new Date(),
+  });
 
-module.exports = mongoose.models.Dispute || mongoose.model("Dispute", disputeSchema);
+  return dispute;
+};
+
+module.exports = saveDispute;

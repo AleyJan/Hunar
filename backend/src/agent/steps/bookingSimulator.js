@@ -1,6 +1,5 @@
 const saveBooking = require("../../tools/saveBooking");
 const sendNotification = require("../../tools/sendNotification");
-const { checkSlotConflict } = require("../../utils/timeSlotUtils");
 const getBookings = require("../../tools/getBookings");
 const Provider = require("../../models/Provider");
 const User = require("../../models/User");
@@ -42,18 +41,10 @@ const bookingSimulator = async (data) => {
   const scheduledAtISO = scheduledDate.toISOString();
   const date = scheduledAtISO.split("T")[0];
 
-  // ── Final conflict check ──────────────────────────────────
-  const { bookings } = await getBookings(providerId, date);
-  const { hasConflict, nextAvailableSlots } = checkSlotConflict(
-    scheduledAtISO, 60, bookings, travelBufferMinutes
-  );
-
-  if (hasConflict) {
-    throw Object.assign(
-      new Error("Slot conflict detected — please re-select time"),
-      { statusCode: 409, nextAvailableSlots }
-    );
-  }
+  // ── Slot conflict check disabled ──────────────────────────
+  // Frontend shows booked slots as faded/unclickable
+  // No backend conflict check needed
+  await getBookings(providerId, date); // kept for logging only
 
   // ── Save booking to MongoDB ───────────────────────────────
   const booking = await saveBooking({
@@ -113,14 +104,13 @@ const bookingSimulator = async (data) => {
     step: "BOOKING_CONFIRMED",
     input: { userId, providerId, serviceType, scheduledAt: scheduledAtISO, pricing },
     reasoning:
-      `Final conflict check passed for slot ${formattedTime}. ` +
       `Booking ${booking.bookingId} saved to MongoDB. ` +
       `User ${user?.name} notified at ${user?.phone}. ` +
       `Provider ${provider?.name} notified at ${provider?.phone}. ` +
       `Reminder scheduled 30 minutes before slot.`,
     decision: `Booking ${booking.bookingId} confirmed — all parties notified.`,
     confidence: 1.0,
-    fallback_considered: "No slot conflict on final check — no fallback needed.",
+    fallback_considered: "Frontend slot picker prevents conflicts — no backend check needed.",
     output: {
       bookingId: booking.bookingId,
       status: booking.status,
