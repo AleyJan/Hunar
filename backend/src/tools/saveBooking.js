@@ -13,6 +13,7 @@ const { generateBookingId } = require("../utils/bookingIdGenerator");
  * @returns {Object} saved booking document
  */
 const saveBooking = async (bookingData) => {
+  console.log("💾 saveBooking received:", JSON.stringify(bookingData, null, 2));
   // Generate unique ID in BK-YYYY-XXXXX format
   const bookingId = await generateBookingId();
 

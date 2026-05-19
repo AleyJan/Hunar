@@ -44,6 +44,7 @@ app.use("/api/book", require("./src/routes/book"));
 app.use("/api/tracking", require("./src/routes/tracking"));
 app.use("/api/feedback", require("./src/routes/feedback"));
 app.use("/api/dispute", require("./src/routes/dispute"));
+app.use("/api/admin", require("./src/routes/adminRoutes"));
 
 // ============================================================
 // 404 HANDLER

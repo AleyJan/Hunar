@@ -16,6 +16,7 @@ const router = express.Router();
 // POST /api/book
 router.post("/", protect, async (req, res, next) => {
   try {
+    console.log("📦 Book route body:", JSON.stringify(req.body));
     const result = await bookingSimulator({
       ...req.body,
       userId: req.user._id,
@@ -90,6 +91,73 @@ router.patch("/:id/provider-cancel", protect, async (req, res, next) => {
       agentTrace: newMatches.trace,
     });
   } catch (err) { next(err); }
+});
+
+
+// POST /api/book/payment-confirm — Simulate payment with 10% failure rate
+router.post("/payment-confirm", protect, async (req, res, next) => {
+  try {
+    const { bookingId, paymentMethod = "jazzcash" } = req.body;
+
+    if (!bookingId) {
+      return res.status(400).json({
+        status: "error",
+        message: "bookingId is required",
+      });
+    }
+
+    const booking = await Booking.findOne({ bookingId });
+    if (!booking) {
+      return res.status(404).json({
+        status: "error",
+        message: "Booking not found",
+      });
+    }
+
+    // Simulate 10% payment failure rate
+    const paymentFailed = Math.random() < 0.1;
+
+    if (paymentFailed) {
+      return res.status(402).json({
+        status: "error",
+        message: "Payment failed — booking held for 10 minutes. Please retry.",
+        bookingId,
+        holdExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        retryAllowed: true,
+        agentTrace: {
+          step: "PAYMENT_CONFIRMATION",
+          reasoning: "Payment gateway returned failure. Booking placed on 10-minute hold.",
+          decision: "Retry payment within 10 minutes or slot will be released",
+          confidence: 0.0,
+        },
+      });
+    }
+
+    // Payment success
+    booking.status = "confirmed";
+    await booking.save();
+
+    res.json({
+      status: "success",
+      message: "Payment confirmed successfully",
+      data: {
+        bookingId,
+        paymentMethod,
+        amountPaid: booking.pricing?.totalAmount,
+        paidAt: new Date(),
+        receipt: `HUNAR-RCPT-${Date.now()}`,
+        agentTrace: {
+          step: "PAYMENT_CONFIRMATION",
+          reasoning: `Payment of Rs ${booking.pricing?.totalAmount} received via ${paymentMethod}. Booking confirmed.`,
+          decision: "Payment successful — booking status updated to confirmed",
+          confidence: 1.0,
+        },
+      },
+    });
+
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

@@ -1,8 +1,3 @@
-// ============================================================
-// HUNAR Agent Step 5 — src/agent/steps/bookingSimulator.js
-// Booking confirmation, ID generation, notifications
-// ============================================================
-
 const saveBooking = require("../../tools/saveBooking");
 const sendNotification = require("../../tools/sendNotification");
 const { checkSlotConflict } = require("../../utils/timeSlotUtils");
@@ -21,33 +16,25 @@ const bookingSimulator = async (data) => {
 
   // ── Parse scheduledAt safely ──────────────────────────────
   let scheduledDate;
-
   if (!scheduledAt) {
-    // Default to tomorrow 09:00 if nothing provided
     scheduledDate = new Date();
     scheduledDate.setDate(scheduledDate.getDate() + 1);
     scheduledDate.setHours(9, 0, 0, 0);
-
   } else if (typeof scheduledAt === "string" && scheduledAt.includes("T")) {
-    // Full ISO string — e.g. "2026-05-17T09:00:00.000Z"
     scheduledDate = new Date(scheduledAt);
-
   } else if (typeof scheduledAt === "string" && scheduledAt.includes(":")) {
-    // Time only — e.g. "09:00" — assume tomorrow
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const [hours, minutes] = scheduledAt.split(":");
     tomorrow.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
     scheduledDate = tomorrow;
-
   } else {
     scheduledDate = new Date(scheduledAt);
   }
 
-  // Validate the date
   if (isNaN(scheduledDate.getTime())) {
     throw Object.assign(
-      new Error("Invalid scheduledAt — use ISO format like 2026-05-17T09:00:00.000Z or time like 09:00"),
+      new Error("Invalid scheduledAt — use ISO format like 2026-05-20T11:00:00.000Z"),
       { statusCode: 400 }
     );
   }
@@ -82,7 +69,7 @@ const bookingSimulator = async (data) => {
     Provider.findById(providerId).select("name phone"),
   ]);
 
-  // ── Simulate SMS/WhatsApp confirmations ───────────────────
+  // ── Build notification messages ───────────────────────────
   const formattedTime = scheduledDate.toLocaleString("en-PK", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -119,11 +106,7 @@ const bookingSimulator = async (data) => {
     }),
   ]);
 
-  // ── Log reminder (would use job queue in production) ──────
-  console.log(
-    `⏰ [REMINDER SCHEDULED] Booking ${booking.bookingId} — ` +
-    `reminder 30 min before ${formattedTime}`
-  );
+  console.log(`⏰ [REMINDER SCHEDULED] Booking ${booking.bookingId} — reminder 30 min before ${formattedTime}`);
 
   // ── Reasoning trace ───────────────────────────────────────
   const trace = {
@@ -153,6 +136,12 @@ const bookingSimulator = async (data) => {
     smsSimulation: {
       userMessage: userMsg,
       providerMessage: providerMsg,
+    },
+    providerEarnings: {
+      totalJobValue: pricing?.totalAmount || 0,
+      platformFee: Math.round((pricing?.totalAmount || 0) * 0.10),
+      providerReceives: Math.round((pricing?.totalAmount || 0) * 0.90),
+      providerMessage: `Aap ko Rs ${Math.round((pricing?.totalAmount || 0) * 0.90)} milenge is kaam ke liye. Platform fee: Rs ${Math.round((pricing?.totalAmount || 0) * 0.10)}`,
     },
     notifications: [userNotif, providerNotif],
     trace,

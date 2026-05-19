@@ -10,6 +10,7 @@ const scheduler = async ({ providerId, requestedTime, travelBufferMinutes = 15, 
     return {
       available: false,
       reason: "Missing providerId or requestedTime",
+      waitlist: null,
       trace: {
         step: "SCHEDULING",
         reasoning: "Missing input — cannot check slot",
@@ -47,6 +48,7 @@ Determine:
 1. Is the requested slot available? (check for conflicts including travel buffer)
 2. If not available, suggest 3 alternative slots on the same day
 3. Consider realistic working hours: 8:00 AM to 8:00 PM only
+4. If the provider is fully booked for the entire day, set alternativeSlots to empty array
 
 Return ONLY valid JSON, no markdown:
 {
@@ -55,7 +57,8 @@ Return ONLY valid JSON, no markdown:
   "alternativeSlots": ["HH:MM", "HH:MM", "HH:MM"] or [],
   "travelBufferApplied": true or false,
   "reasoning": "step by step explanation of your decision",
-  "recommendation": "brief advice for the user"
+  "recommendation": "brief advice for the user",
+  "fullyBooked": true or false
 }`;
 
   let aiDecision;
@@ -80,7 +83,6 @@ Return ONLY valid JSON, no markdown:
     console.warn("⚠️ Groq scheduling failed, using rule check:", err.message);
     groqFailed = true;
 
-    // Simple fallback — check if any booking is within 60 min of requested
     const reqTime = new Date(requestedTime).getTime();
     const hasConflict = existingSlots.some((s) => {
       const slotTime = new Date(s.time).getTime();
@@ -93,11 +95,21 @@ Return ONLY valid JSON, no markdown:
       alternativeSlots: hasConflict ? ["10:00", "14:00", "16:00"] : [],
       travelBufferApplied: true,
       reasoning: "Fallback rule check — Groq unavailable",
-      recommendation: hasConflict
-        ? "Please select an alternative slot"
-        : "Slot is available",
+      recommendation: hasConflict ? "Please select an alternative slot" : "Slot is available",
+      fullyBooked: false,
     };
   }
+
+  // ── Waitlist logic — offered when provider is fully booked ─
+  const allSlotsTaken = !aiDecision.isAvailable &&
+    (aiDecision.alternativeSlots.length === 0 || aiDecision.fullyBooked);
+
+  const waitlist = allSlotsTaken ? {
+    offered: true,
+    message: "Sab slots full hain. Kya aap waitlist mein add hona chahte hain? Jab slot available ho, aapko notify karenge.",
+    estimatedWait: "2-4 ghante",
+    autoNotify: true,
+  } : null;
 
   const trace = {
     step: "SCHEDULING",
@@ -105,11 +117,15 @@ Return ONLY valid JSON, no markdown:
     reasoning: aiDecision.reasoning,
     decision: aiDecision.isAvailable
       ? `Slot ${requestedTime} is AVAILABLE`
-      : `Slot TAKEN — alternatives: ${aiDecision.alternativeSlots.join(", ")}`,
+      : allSlotsTaken
+        ? `Provider fully booked — waitlist offered`
+        : `Slot TAKEN — alternatives: ${aiDecision.alternativeSlots.join(", ")}`,
     confidence: groqFailed ? 0.7 : 0.95,
-    fallback_considered: aiDecision.alternativeSlots.length > 0
-      ? `Alternatives suggested: ${aiDecision.alternativeSlots.join(", ")}`
-      : "No fallback needed — slot available",
+    fallback_considered: allSlotsTaken
+      ? "All slots taken — waitlist offered as fallback"
+      : aiDecision.alternativeSlots.length > 0
+        ? `Alternatives suggested: ${aiDecision.alternativeSlots.join(", ")}`
+        : "No fallback needed — slot available",
     groqUsed: !groqFailed,
     output: aiDecision,
     durationMs: Date.now() - startTime,
@@ -120,6 +136,7 @@ Return ONLY valid JSON, no markdown:
     conflictReason: aiDecision.conflictReason,
     alternativeSlots: aiDecision.alternativeSlots,
     recommendation: aiDecision.recommendation,
+    waitlist,
     trace,
   };
 };
