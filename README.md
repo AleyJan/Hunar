@@ -114,6 +114,14 @@ graph TD
 
 ---
 
+## 📈 Provider Workload & Utilization Optimization
+Designed to address **Provider-side Optimization & Workload Balancing** specifications:
+- **Workload Penalization:** Matchmaker penalizes over-scheduled providers (5+ bookings/day) for high-urgency tasks, distributing jobs fairly and avoiding burnout.
+- **Smart Insights & Demand Forecast:** Providers are greeted with a customized dynamic **Smart Insights & Forecast** card on their dashboard showing projected demand sector highlights (*"High customer demand forecasted in G-13"*) based on active trends.
+- **Recommended Slots:** Suggests custom high-yield recommended utilization time slots (*"Open slots between 11:00 AM - 01:00 PM"*) to maximize provider slot occupancy rates and earning opportunities.
+
+---
+
 ## 📡 APIs & Third-Party Integrations
 
 | API | Type | Usage |

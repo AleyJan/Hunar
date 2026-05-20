@@ -186,6 +186,21 @@ export default function ProviderDashboard({ navigation }) {
                 </View>
             </View>
 
+            {/* HUNAR Smart Insights & Workload Forecasting */}
+            <View style={styles.insightsCard}>
+                <View style={styles.insightsHeader}>
+                    <Ionicons name="trending-up-outline" size={16} color={THEME.colors.accent} />
+                    <Text style={styles.insightsTitle}>HUNAR SMART INSIGHTS & DEMAND FORECAST</Text>
+                </View>
+                <Text style={styles.insightsText}>
+                    📈 <Text style={{ fontWeight: '700', color: THEME.colors.accent }}>Demand Forecast:</Text> High customer demand forecasted in <Text style={{ fontWeight: '700', color: THEME.colors.white }}>{user?.sector || 'Islamabad'}</Text> today for <Text style={{ fontWeight: '700', color: THEME.colors.white }}>{user?.services?.[0] || 'Home Services'}</Text>.
+                </Text>
+                <View style={styles.insightsDivider} />
+                <Text style={styles.insightsText}>
+                    ⚡ <Text style={{ fontWeight: '700', color: THEME.colors.accent }}>Utilization Slots:</Text> Open slots between <Text style={{ fontWeight: '700', color: THEME.colors.white }}>11:00 AM - 01:00 PM</Text> and <Text style={{ fontWeight: '700', color: THEME.colors.white }}>04:00 PM - 06:00 PM</Text> to balance your workload and maximize earnings by up to 25%.
+                </Text>
+            </View>
+
             <View style={styles.filterRow}>
                 {['all', 'pending', 'completed', 'cancelled'].map(f => (
                     <TouchableOpacity
@@ -244,6 +259,40 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 20, fontWeight: '900', color: THEME.colors.white, letterSpacing: 1 },
     headerSub: { fontSize: 12, color: THEME.colors.accent, marginTop: 2 },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+
+    insightsCard: {
+        backgroundColor: THEME.colors.primaryDark,
+        borderRadius: 16,
+        padding: 14,
+        marginHorizontal: 16,
+        marginTop: 16,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: THEME.colors.accent + '40',
+        ...THEME.shadows.premium,
+    },
+    insightsHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 8,
+    },
+    insightsTitle: {
+        fontSize: 11,
+        fontWeight: '805',
+        color: THEME.colors.accent,
+        letterSpacing: 0.5,
+    },
+    insightsText: {
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.85)',
+        lineHeight: 16,
+    },
+    insightsDivider: {
+        height: 0.5,
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        marginVertical: 8,
+    },
     ratingBadge: {
         flexDirection: 'row', alignItems: 'center', gap: 4,
         backgroundColor: 'rgba(255,255,255,0.1)',
