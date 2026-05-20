@@ -3,6 +3,7 @@
 > AI-Powered Informal Service Economy Platform  
 > Built with Expo SDK 54 + React Native  
 > Connects to HUNAR Agentic Backend (Node.js + Groq AI + MongoDB)
+> Developed By: Muhammad Noman & Nabil Ahmad 
 
 ---
 
@@ -57,8 +58,8 @@ mobile/
 │           ├── BookingConfirmedScreen.js # Success screen with booking details
 │           ├── TrackingDetailScreen.js  # Live tracking with simulated map + progress steps
 │           ├── FeedbackScreen.js        # Star rating + dispute submission
-│           ├── TrackingScreen.js        # My Bookings tab placeholder
-│           └── DisputeScreen.js         # Disputes tab placeholder
+│           ├── TrackingScreen.js        # Full list of active & historic bookings
+│           └── DisputeScreen.js         # Dual-role Dispute mediation screen
 ```
 
 ---
@@ -99,8 +100,8 @@ AIRequestHub (Chat)
 
 Bottom Tabs:
     ├── AI Assistant → AIRequestHub
-    ├── My Bookings  → TrackingScreen (placeholder)
-    └── Disputes     → DisputeScreen (placeholder)
+    ├── My Bookings  → TrackingScreen (Interactive history & status filters)
+    └── Disputes     → DisputeScreen (Interactive dual-role ledger & admin action)
 ```
 
 ---
@@ -323,8 +324,6 @@ This generates a downloadable APK from Expo's build servers.
 
 - **Maps:** Tracking screen uses a simulated grid map. Real GPS tracking requires a development build (not Expo Go compatible).
 - **SMS/WhatsApp:** Notifications are simulated — shown as previews in the app. Real delivery would use Twilio in production.
-- **My Bookings tab:** Currently a placeholder. Would show booking history in production.
-- **Disputes tab:** Currently a placeholder. Disputes are raised from the Feedback screen.
 - **Photo upload:** Camera capture for job evidence is a placeholder. Would use `expo-image-picker` in production.
 
 ---

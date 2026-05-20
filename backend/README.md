@@ -1,7 +1,8 @@
 # HUNAR — AI-Powered Informal Service Economy Platform
 
 > Built for the Google Antigravity Hackathon  
-> Engineer: Ali | Stack: Node.js + Express + MongoDB Atlas + Groq LLM + Google Maps API  
+> Developed By: Ali Jan 
+> Tech Stack: Node.js + Express + MongoDB Atlas + Groq LLM   
 > Built using: Google Antigravity IDE
 
 ---
@@ -272,6 +273,9 @@ Note: The provider data lives in MongoDB Atlas (not in a local file). It was see
 | GET | /api/tracking/:bookingId | JWT | Get live tracking status |
 | POST | /api/feedback/:bookingId | JWT | Submit rating and review |
 | POST | /api/dispute | JWT | Raise dispute → Groq mediates |
+| GET | /api/dispute/my-disputes | JWT | Fetch active disputes (client/provider) |
+| PATCH | /api/dispute/:id/provider-respond | JWT | Provider responds (Accept/Reject AI resolution) |
+| PATCH | /api/dispute/:id/admin-resolve | JWT | Mock resolve human-referred dispute |
 | GET | /api/health | None | Health check |
 
 ---
