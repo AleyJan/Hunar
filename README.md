@@ -121,7 +121,7 @@ graph TD
 | **Groq Cloud (Llama 3)** | Real | Runs the parser, matching re-ranker, scheduler travel buffer, and dispute mediator. |
 | **MongoDB Atlas** | Real | Cloud database storing Users, Providers, Bookings, ReasoningLogs, and Notifications. |
 | **Google Maps API** | Real | Decodes sector inputs into coordinate pairs to measure exact provider-to-client distance. |
-| **Simulated SMS (Twilio)** | Mock | Prints live, fully structured text message alerts directly into the backend server console. |
+
 
 ---
 
