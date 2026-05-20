@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    ScrollView, StatusBar, Animated,
+    ScrollView, StatusBar, Animated, Image,
+    Share, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { serviceAPI } from '../../services/api';
+import api from '../../services/api';
 import { THEME } from '../../constants/theme';
 
 const STATUS_STEPS = [
@@ -15,14 +18,12 @@ const STATUS_STEPS = [
     { key: 'completed', label: 'Service Completed', icon: 'star' },
 ];
 
-// Map DB status to step index
 const STATUS_TO_STEP = {
-    confirmed: 0,
-    en_route: 1,
-    arrived: 2,
-    in_progress: 3,
-    completed: 4,
+    confirmed: 0, en_route: 1, arrived: 2, in_progress: 3, completed: 4,
 };
+
+const CLOUDINARY_URL = 'https://api.cloudinary.com/v1_1/dm1z6bbwc/image/upload';
+const CLOUDINARY_PRESET = 'hunarAi';
 
 export default function TrackingDetailScreen({ navigation, route }) {
     const { booking } = route.params || {};
@@ -30,13 +31,14 @@ export default function TrackingDetailScreen({ navigation, route }) {
     const startTimeRef = useRef(Date.now());
     const intervalRef = useRef(null);
 
-    // If booking already completed when opened — start at step 4
     const initialStep = booking?.status === 'completed' ? 4 : 0;
 
     const [trackingData, setTrackingData] = useState(null);
     const [currentStep, setCurrentStep] = useState(initialStep);
     const [loading, setLoading] = useState(booking?.status !== 'completed');
     const [isPending, setIsPending] = useState(false);
+    const [photos, setPhotos] = useState(booking?.photos || []);
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
     useEffect(() => {
         Animated.loop(
@@ -46,84 +48,157 @@ export default function TrackingDetailScreen({ navigation, route }) {
             ])
         ).start();
 
-        // If already completed — don't start polling
-        if (booking?.status === 'completed') {
-            setLoading(false);
-            return;
-        }
+        if (booking?.status === 'completed') { setLoading(false); return; }
 
         fetchTracking();
-
         intervalRef.current = setInterval(() => {
             setCurrentStep(prev => {
-                if (prev >= 4) {
-                    clearInterval(intervalRef.current);
-                    return 4;
-                }
+                if (prev >= 4) { clearInterval(intervalRef.current); return 4; }
                 return prev;
             });
             fetchTracking();
         }, 8000);
 
-        return () => {
-            if (intervalRef.current) clearInterval(intervalRef.current);
-        };
+        return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
     }, []);
 
     const fetchTracking = async () => {
-        if (!booking?.bookingId) {
-            setLoading(false);
-            return;
-        }
-
+        if (!booking?.bookingId) { setLoading(false); return; }
         try {
             const res = await serviceAPI.getTracking(booking.bookingId);
             const data = res.data.data;
             setTrackingData(data);
 
-            // Pending — hold progress
             if (data.currentStatus === 'pending') {
-                setIsPending(true);
-                setCurrentStep(0);
-                setLoading(false);
-                return;
+                setIsPending(true); setCurrentStep(0); setLoading(false); return;
             }
             setIsPending(false);
 
-            // Completed in DB — jump to step 4 and stop polling
             if (data.currentStatus === 'completed') {
-                setCurrentStep(4);
-                setLoading(false);
+                setCurrentStep(4); setLoading(false);
                 if (intervalRef.current) clearInterval(intervalRef.current);
                 return;
             }
 
-            // Map DB status to step
             const dbStep = STATUS_TO_STEP[data.currentStatus];
-            if (dbStep !== undefined) {
-                setCurrentStep(dbStep);
-                setLoading(false);
-                return;
-            }
+            if (dbStep !== undefined) { setCurrentStep(dbStep); setLoading(false); return; }
         } catch (err) {
             console.log('Tracking fetch error:', err.message);
         }
 
-        // Fallback — time-based progression
-        const secondsElapsed = (Date.now() - startTimeRef.current) / 1000;
+        const s = (Date.now() - startTimeRef.current) / 1000;
         let step = 0;
-        if (secondsElapsed > 8) step = 1;
-        if (secondsElapsed > 20) step = 2;
-        if (secondsElapsed > 35) step = 3;
-        if (secondsElapsed > 50) step = 4;
-
+        if (s > 8) step = 1; if (s > 20) step = 2;
+        if (s > 35) step = 3; if (s > 50) step = 4;
         setCurrentStep(step);
         setLoading(false);
     };
 
+    const handlePickPhoto = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission Chahiye', 'Gallery access allow karein');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.Images,
+            allowsEditing: true,
+            quality: 0.7,
+        });
+
+        if (result.canceled) return;
+
+        setUploadingPhoto(true);
+        try {
+            const uri = result.assets[0].uri;
+            const filename = uri.split('/').pop();
+            const match = /\.(\w+)$/.exec(filename);
+            const type = match ? `image/${match[1]}` : 'image/jpeg';
+
+            const formData = new FormData();
+            formData.append('file', { uri, name: filename, type });
+            formData.append('upload_preset', CLOUDINARY_PRESET);
+            formData.append('folder', 'hunar_evidence');
+
+            const uploadRes = await fetch(CLOUDINARY_URL, {
+                method: 'POST',
+                body: formData,
+            });
+            const uploadData = await uploadRes.json();
+
+            if (!uploadData.secure_url)
+                throw new Error('Upload failed');
+
+            // Save to MongoDB
+            await api.patch(`/book/${booking.bookingId}/add-photo`, {
+                photoUrl: uploadData.secure_url,
+            });
+
+            setPhotos(prev => [...prev, uploadData.secure_url]);
+            Alert.alert('✅ Upload Ho Gaya!', 'Photo save ho gayi');
+        } catch (err) {
+            console.log('Upload error:', err.message);
+            Alert.alert('Upload Failed', 'Photo upload nahi hui. Try again.');
+        } finally {
+            setUploadingPhoto(false);
+        }
+    };
+
+    const handleDownloadReceipt = async () => {
+        const provider = trackingData?.provider || booking?.providerId;
+        const receipt = `
+╔══════════════════════════════╗
+║       HUNAR RECEIPT          ║
+╚══════════════════════════════╝
+
+Booking ID:  ${booking?.bookingId}
+Date:        ${new Date(booking?.scheduledAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}
+
+SERVICE DETAILS
+───────────────
+Service:     ${booking?.serviceType?.replace(/_/g, ' ').toUpperCase()}
+Location:    ${booking?.sector}
+Complexity:  ${booking?.complexity}
+Urgency:     ${booking?.urgency?.toUpperCase()}
+
+PROVIDER
+───────────────
+Name:        ${provider?.name || 'N/A'}
+Phone:       ${provider?.phone || 'N/A'}
+Rating:      ⭐ ${provider?.rating || 'N/A'}
+
+PRICING
+───────────────
+Base Rate:      Rs. ${booking?.pricing?.baseRate}
+Distance Fee:   Rs. ${booking?.pricing?.distanceFee}
+Urgency:        Rs. ${booking?.pricing?.urgencyPremium}
+Discount:      -Rs. ${booking?.pricing?.loyaltyDiscount || 0}
+───────────────
+TOTAL:          Rs. ${booking?.pricing?.totalAmount}
+
+Receipt ID: HUNAR-RCPT-${booking?.bookingId?.slice(-8)}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Thank you for using HUNAR!
+Pakistan's AI Service Platform
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    `.trim();
+
+        try {
+            await Share.share({ message: receipt, title: `HUNAR Receipt — ${booking?.bookingId}` });
+        } catch (err) {
+            console.log('Share error:', err.message);
+        }
+    };
+
     const handleRateService = () => navigation.navigate('Feedback', { booking });
-    const handleGoHome = () =>
-        navigation.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });
+    const handleGoHome = () => navigation.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });
+
+    const providerName = trackingData?.provider?.name || booking?.providerId?.name;
+    const providerPhone = trackingData?.provider?.phone || booking?.providerId?.phone;
+    const providerSector = trackingData?.provider?.sector || booking?.providerId?.sector;
+    const providerRating = booking?.providerId?.rating;
+    const alreadyRated = booking?.rating && booking.rating > 0;
 
     if (loading) {
         return (
@@ -175,30 +250,49 @@ export default function TrackingDetailScreen({ navigation, route }) {
                     </View>
                 )}
 
-                {/* Simulated Map */}
+                {/* Provider Info */}
+                {!!providerName && (
+                    <View style={styles.providerInfoCard}>
+                        <View style={styles.providerInfoHeader}>
+                            <View style={styles.providerAvatar}>
+                                <Text style={styles.providerAvatarText}>{providerName?.slice(0, 2).toUpperCase()}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.providerInfoName}>{providerName}</Text>
+                                <Text style={styles.providerInfoSector}>
+                                    📍 {providerSector}{providerRating ? `  ⭐ ${providerRating}` : ''}
+                                </Text>
+                            </View>
+                            <View style={styles.providerInfoRight}>
+                                <Text style={styles.providerInfoPhone}>{providerPhone}</Text>
+                                <View style={styles.providerInfoCall}>
+                                    <Ionicons name="call-outline" size={14} color={THEME.colors.primary} />
+                                    <Text style={styles.providerInfoCallText}>Call</Text>
+                                </View>
+                            </View>
+                        </View>
+                    </View>
+                )}
+
+                {/* Map */}
                 <View style={styles.mapCard}>
                     <View style={styles.mapPlaceholder}>
                         <View style={styles.mapGrid}>
                             {[...Array(6)].map((_, i) => (
                                 <View key={i} style={styles.mapRow}>
-                                    {[...Array(6)].map((_, j) => (
-                                        <View key={j} style={styles.mapCell} />
-                                    ))}
+                                    {[...Array(6)].map((_, j) => <View key={j} style={styles.mapCell} />)}
                                 </View>
                             ))}
                         </View>
-
                         <View style={[styles.mapDot, styles.userDot]}>
                             <Ionicons name="home" size={12} color={THEME.colors.white} />
                         </View>
-
                         <Animated.View style={[
                             styles.mapDot, styles.providerDot,
                             !isPending && currentStep >= 1 && { transform: [{ scale: pulseAnim }] },
                         ]}>
                             <Ionicons name="car" size={12} color={THEME.colors.white} />
                         </Animated.View>
-
                         <View style={styles.etaBadge}>
                             <Text style={styles.etaText}>
                                 {isPending ? 'Awaiting provider...'
@@ -210,7 +304,6 @@ export default function TrackingDetailScreen({ navigation, route }) {
                             </Text>
                         </View>
                     </View>
-
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
                             <Text style={styles.statValue}>
@@ -240,7 +333,6 @@ export default function TrackingDetailScreen({ navigation, route }) {
                         const isDone = !isPending && index < currentStep;
                         const isActive = !isPending && index === currentStep;
                         const isPend = isPending || index > currentStep;
-
                         return (
                             <View key={step.key} style={styles.stepRow}>
                                 <View style={styles.stepLeft}>
@@ -279,30 +371,84 @@ export default function TrackingDetailScreen({ navigation, route }) {
                     })}
                 </View>
 
-                {/* Completion Checklist */}
+                {/* Completion Checklist + Photo Upload + Receipt */}
                 {currentStep === 4 && !isPending && (
-                    <View style={styles.checklistCard}>
-                        <Text style={styles.cardTitle}>Service Completion Checklist</Text>
-                        {['Job Completed', 'Area Cleaned Up', 'Customer Satisfaction Confirmed', 'Payment Collected', 'Receipt Issued'].map((item, i) => (
-                            <View key={i} style={styles.checkItem}>
-                                <View style={styles.checkIcon}>
-                                    <Ionicons name="checkmark" size={14} color={THEME.colors.white} />
+                    <>
+                        <View style={styles.checklistCard}>
+                            <Text style={styles.cardTitle}>Service Completion Checklist</Text>
+                            {['Job Completed', 'Area Cleaned Up', 'Customer Satisfaction Confirmed', 'Payment Collected', 'Receipt Issued'].map((item, i) => (
+                                <View key={i} style={styles.checkItem}>
+                                    <View style={styles.checkIcon}>
+                                        <Ionicons name="checkmark" size={14} color={THEME.colors.white} />
+                                    </View>
+                                    <Text style={styles.checkText}>{item}</Text>
                                 </View>
-                                <Text style={styles.checkText}>{item}</Text>
-                            </View>
-                        ))}
-                        <View style={styles.photoPlaceholder}>
-                            <Ionicons name="camera-outline" size={24} color={THEME.colors.textMuted} />
-                            <Text style={styles.photoText}>Photo Evidence Placeholder</Text>
+                            ))}
                         </View>
-                    </View>
+
+                        {/* Photo Evidence */}
+                        <View style={styles.photoCard}>
+                            <Text style={styles.cardTitle}>📸 Kaam ka Saboot</Text>
+                            <Text style={styles.photoSub}>
+                                Service ki photos upload karein — future disputes mein kaam aayengi
+                            </Text>
+
+                            {/* Uploaded Photos */}
+                            {photos.length > 0 && (
+                                <View style={styles.photosGrid}>
+                                    {photos.map((url, i) => (
+                                        <Image key={i} source={{ uri: url }} style={styles.photoThumb} />
+                                    ))}
+                                </View>
+                            )}
+
+                            <TouchableOpacity
+                                style={[styles.uploadBtn, uploadingPhoto && { opacity: 0.6 }]}
+                                onPress={handlePickPhoto}
+                                disabled={uploadingPhoto}
+                            >
+                                {uploadingPhoto ? (
+                                    <>
+                                        <ActivityIndicator color={THEME.colors.primary} size="small" />
+                                        <Text style={styles.uploadBtnText}>Upload Ho Raha Hai...</Text>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Ionicons name="camera-outline" size={18} color={THEME.colors.primary} />
+                                        <Text style={styles.uploadBtnText}>
+                                            {photos.length > 0 ? 'Aur Photo Add Karein' : 'Photo Upload Karein'}
+                                        </Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Receipt Download */}
+                        <TouchableOpacity style={styles.receiptBtn} onPress={handleDownloadReceipt}>
+                            <Ionicons name="receipt-outline" size={18} color={THEME.colors.white} />
+                            <Text style={styles.receiptBtnText}>Receipt Download / Share Karein</Text>
+                        </TouchableOpacity>
+                    </>
                 )}
 
+                {/* Rate or Already Rated */}
                 {currentStep === 4 && !isPending ? (
-                    <TouchableOpacity style={styles.rateBtn} onPress={handleRateService}>
-                        <Ionicons name="star-outline" size={20} color={THEME.colors.white} />
-                        <Text style={styles.rateBtnText}>Rate Your Experience</Text>
-                    </TouchableOpacity>
+                    alreadyRated ? (
+                        <View style={styles.alreadyRatedCard}>
+                            <Ionicons name="star" size={22} color={THEME.colors.accent} />
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.alreadyRatedTitle}>Rating Di Ja Chuki Hai ⭐ {booking.rating}/5</Text>
+                                {booking.review ? (
+                                    <Text style={styles.alreadyRatedReview}>"{booking.review}"</Text>
+                                ) : null}
+                            </View>
+                        </View>
+                    ) : (
+                        <TouchableOpacity style={styles.rateBtn} onPress={handleRateService}>
+                            <Ionicons name="star-outline" size={20} color={THEME.colors.white} />
+                            <Text style={styles.rateBtnText}>Rate Your Experience</Text>
+                        </TouchableOpacity>
+                    )
                 ) : (
                     <View style={styles.waitingCard}>
                         <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
@@ -339,7 +485,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
     },
     statusBadgeText: { color: THEME.colors.white, fontSize: 11, fontWeight: '700' },
-
     content: { padding: 16, gap: 14, paddingBottom: 40 },
 
     pendingCard: {
@@ -349,6 +494,24 @@ const styles = StyleSheet.create({
     },
     pendingTitle: { fontSize: 14, fontWeight: '700', color: THEME.colors.textDark },
     pendingText: { fontSize: 12, color: THEME.colors.textMuted, marginTop: 4, lineHeight: 18 },
+
+    providerInfoCard: { backgroundColor: THEME.colors.white, borderRadius: 16, padding: 14, ...THEME.shadows.premium },
+    providerInfoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    providerAvatar: {
+        width: 44, height: 44, borderRadius: 12,
+        backgroundColor: THEME.colors.primary, alignItems: 'center', justifyContent: 'center',
+    },
+    providerAvatarText: { color: THEME.colors.white, fontWeight: '800', fontSize: 15 },
+    providerInfoName: { fontSize: 15, fontWeight: '700', color: THEME.colors.textDark },
+    providerInfoSector: { fontSize: 12, color: THEME.colors.textMuted, marginTop: 2 },
+    providerInfoRight: { alignItems: 'flex-end', gap: 4 },
+    providerInfoPhone: { fontSize: 12, color: THEME.colors.textDark, fontWeight: '600' },
+    providerInfoCall: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        backgroundColor: THEME.colors.primaryLight,
+        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+    },
+    providerInfoCallText: { fontSize: 11, color: THEME.colors.primary, fontWeight: '600' },
 
     mapCard: { backgroundColor: THEME.colors.white, borderRadius: 16, overflow: 'hidden', ...THEME.shadows.premium },
     mapPlaceholder: {
@@ -369,7 +532,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
     },
     etaText: { color: THEME.colors.white, fontSize: 12, fontWeight: '700' },
-
     statsRow: { flexDirection: 'row', padding: 14, borderTopWidth: 1, borderTopColor: THEME.colors.border },
     statItem: { flex: 1, alignItems: 'center' },
     statValue: { fontSize: 12, fontWeight: '700', color: THEME.colors.textDark, textAlign: 'center' },
@@ -378,19 +540,16 @@ const styles = StyleSheet.create({
 
     stepsCard: { backgroundColor: THEME.colors.white, borderRadius: 16, padding: 16, ...THEME.shadows.premium },
     cardTitle: { fontSize: 15, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 16 },
-
     stepRow: { flexDirection: 'row', gap: 12, minHeight: 50 },
     stepLeft: { alignItems: 'center', width: 28 },
     stepCircle: {
-        width: 28, height: 28, borderRadius: 14,
-        alignItems: 'center', justifyContent: 'center',
+        width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
     },
     stepCircleDone: { backgroundColor: THEME.colors.success },
     stepCircleActive: { backgroundColor: THEME.colors.primary },
     stepCirclePending: { backgroundColor: THEME.colors.bgLight, borderWidth: 1, borderColor: THEME.colors.border },
     stepLine: { width: 2, flex: 1, backgroundColor: THEME.colors.border, marginVertical: 4 },
     stepLineDone: { backgroundColor: THEME.colors.success },
-
     stepContent: { flex: 1, paddingTop: 4, paddingBottom: 12 },
     stepLabel: { fontSize: 13, color: THEME.colors.textMuted },
     stepLabelDone: { color: THEME.colors.textDark, fontWeight: '600' },
@@ -409,12 +568,37 @@ const styles = StyleSheet.create({
         backgroundColor: THEME.colors.success, alignItems: 'center', justifyContent: 'center',
     },
     checkText: { fontSize: 13, color: THEME.colors.textDark, fontWeight: '500' },
-    photoPlaceholder: {
-        alignItems: 'center', gap: 8, paddingVertical: 16,
-        backgroundColor: THEME.colors.bgLight, borderRadius: 10, marginTop: 12,
-        borderWidth: 1, borderStyle: 'dashed', borderColor: THEME.colors.border,
+
+    photoCard: {
+        backgroundColor: THEME.colors.white, borderRadius: 16, padding: 16,
+        ...THEME.shadows.premium,
     },
-    photoText: { fontSize: 12, color: THEME.colors.textMuted },
+    photoSub: { fontSize: 12, color: THEME.colors.textMuted, marginBottom: 12, lineHeight: 18 },
+    photosGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+    photoThumb: { width: 90, height: 90, borderRadius: 10 },
+    uploadBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+        backgroundColor: THEME.colors.primaryLight,
+        borderRadius: 12, paddingVertical: 12,
+        borderWidth: 1.5, borderColor: THEME.colors.primary, borderStyle: 'dashed',
+    },
+    uploadBtnText: { fontSize: 13, color: THEME.colors.primary, fontWeight: '600' },
+
+    receiptBtn: {
+        backgroundColor: THEME.colors.primaryDark,
+        borderRadius: 14, paddingVertical: 14,
+        flexDirection: 'row', alignItems: 'center',
+        justifyContent: 'center', gap: 8,
+    },
+    receiptBtnText: { color: THEME.colors.white, fontSize: 14, fontWeight: '700' },
+
+    alreadyRatedCard: {
+        backgroundColor: '#FFF8E7', borderRadius: 14, padding: 16,
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        borderWidth: 1, borderColor: THEME.colors.accent,
+    },
+    alreadyRatedTitle: { fontSize: 14, fontWeight: '700', color: THEME.colors.textDark },
+    alreadyRatedReview: { fontSize: 12, color: THEME.colors.textMuted, marginTop: 4, fontStyle: 'italic' },
 
     rateBtn: {
         backgroundColor: THEME.colors.accent, borderRadius: 14, paddingVertical: 16,

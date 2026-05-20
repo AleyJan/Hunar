@@ -59,6 +59,8 @@ const providerSchema = new mongoose.Schema(
 
     isActive: { type: Boolean, default: true },
     password: { type: String, select: false },
+    riskFlag: { type: String, enum: ['low', 'medium', 'high'], default: 'low' },
+
   },
   { timestamps: true }
 );

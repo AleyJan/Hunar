@@ -67,7 +67,7 @@ function BookingCard({ booking, onPress }) {
                 </View>
                 <View style={styles.footerItem}>
                     <Ionicons name="layers-outline" size={14} color={THEME.colors.textMuted} />
-                    <Text style={styles.footerText}>{booking.complexity}</Text>
+                    <Text style={styles.footerText}>{booking.complexity || ''}</Text>
                 </View>
                 <TouchableOpacity style={styles.viewBtn} onPress={() => onPress(booking)}>
                     <Text style={styles.viewBtnText}>View</Text>
@@ -156,12 +156,12 @@ export default function ProviderDashboard({ navigation }) {
             <View style={styles.header}>
                 <View>
                     <Text style={styles.headerTitle}>HUNAR Provider</Text>
-                    <Text style={styles.headerSub}>{user?.name} · {user?.sector}</Text>
+                    <Text style={styles.headerSub}>{user?.name || ''} · {user?.sector || ''}</Text>
                 </View>
                 <View style={styles.headerRight}>
                     <View style={styles.ratingBadge}>
                         <Ionicons name="star" size={12} color={THEME.colors.accent} />
-                        <Text style={styles.ratingText}>{user?.rating}</Text>
+                        <Text style={styles.ratingText}>{user?.rating || ''}</Text>
                     </View>
                     <TouchableOpacity onPress={handleLogout}>
                         <Ionicons name="log-out-outline" size={22} color="rgba(255,255,255,0.7)" />

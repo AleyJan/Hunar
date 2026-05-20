@@ -54,11 +54,6 @@ export default function FeedbackScreen({ navigation, route }) {
     };
 
     const handleSubmitDispute = async () => {
-        console.log('Submit dispute tapped');
-        console.log('selectedIssue:', selectedIssue);
-        console.log('disputeDesc:', disputeDesc);
-        console.log('bookingId:', booking?.bookingId);
-
         if (!selectedIssue) {
             Alert.alert('Issue Select Karein', 'Pehle masla select karein');
             return;
@@ -69,18 +64,31 @@ export default function FeedbackScreen({ navigation, route }) {
         }
         setDisputeLoading(true);
         try {
-            console.log('Calling raiseDispute API...');
+            // Submit rating first if not already rated
+            if (rating > 0 && !booking?.rating) {
+                await serviceAPI.submitFeedback(booking?.bookingId, {
+                    rating,
+                    review: `Dispute filed: ${selectedIssue}`,
+                    userId: user?.id,
+                });
+            } else if (!booking?.rating) {
+                // Submit default rating 1 if no rating given with dispute
+                await serviceAPI.submitFeedback(booking?.bookingId, {
+                    rating: 1,
+                    review: `Dispute filed: ${selectedIssue}`,
+                    userId: user?.id,
+                });
+            }
+
             const res = await serviceAPI.raiseDispute({
                 bookingId: booking?.bookingId,
                 issueType: selectedIssue,
                 description: disputeDesc,
                 userId: user?.id,
             });
-            console.log('Dispute success:', JSON.stringify(res.data));
             setDisputeResult(res.data.data);
         } catch (err) {
             console.log('Dispute error full:', JSON.stringify(err.response?.data));
-            console.log('Dispute error msg:', err.message);
             Alert.alert('Error', err.response?.data?.message || 'Dispute submit nahi hua. Try again.');
         } finally {
             setDisputeLoading(false);

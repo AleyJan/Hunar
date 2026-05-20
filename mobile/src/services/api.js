@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'http://192.168.1.3:5000/api';
+const API_URL = 'http://192.168.1.6:5000/api';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -34,6 +34,7 @@ export const serviceAPI = {
     submitFeedback: (bookingId, data) => api.post(`/feedback/${bookingId}`, data),
     raiseDispute: (disputeData) => api.post('/dispute', disputeData),
     getBookedSlots: (providerId, date) => api.get(`/book/slots/${providerId}/${date}`),
+    addBookingPhoto: (bookingId, photoUrl) => api.patch(`/book/${bookingId}/add-photo`, { photoUrl }),
 };
 
 export const providerAPI = {

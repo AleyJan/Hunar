@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { THEME } from '../constants/theme';
 import { ActivityIndicator, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 
 import ProviderDashboard from '../screens/provider/ProviderDashboard';
@@ -39,21 +40,32 @@ function ClientTabs() {
     const [bookingBadge, setBookingBadge] = useState(0);
 
     useEffect(() => {
-        const fetchBadge = async () => {
-            try {
-                const res = await api.get('/book/my-bookings');
-                const bookings = res.data.data || [];
-                // Badge = cancelled bookings with suggested slots (actionable)
-                const actionable = bookings.filter(b =>
-                    b.status === 'provider_cancelled' && b.suggestedSlots?.length > 0
-                ).length;
-                setBookingBadge(actionable);
-            } catch (err) { }
-        };
         fetchBadge();
-        const interval = setInterval(fetchBadge, 20000);
-        return () => clearInterval(interval);
+        // const interval = setInterval(fetchBadge, 20000);
+        // return () => clearInterval(interval);
     }, []);
+
+    const fetchBadge = async () => {
+        try {
+            const res = await api.get('/book/my-bookings');
+            const bookings = res.data.data || [];
+            const total = bookings.length;
+
+            const lastSeen = await AsyncStorage.getItem('last_seen_bookings_count');
+            const lastCount = lastSeen ? parseInt(lastSeen) : total;
+            const badge = Math.max(0, total - lastCount);
+            setBookingBadge(badge);
+        } catch (err) { }
+    };
+
+    const clearBadge = async () => {
+        try {
+            const res = await api.get('/book/my-bookings');
+            const total = (res.data.data || []).length;
+            await AsyncStorage.setItem('last_seen_bookings_count', String(total));
+            setBookingBadge(0);
+        } catch (err) { }
+    };
 
     return (
         <Tab.Navigator
@@ -76,6 +88,7 @@ function ClientTabs() {
             <Tab.Screen
                 name="My Bookings"
                 component={TrackingScreen}
+                listeners={{ tabPress: clearBadge }}
                 options={{
                     tabBarBadge: bookingBadge > 0 ? bookingBadge : undefined,
                     tabBarBadgeStyle: { backgroundColor: THEME.colors.urgencyHigh, fontSize: 10 },
@@ -99,10 +112,33 @@ function AppStack() {
     );
 }
 
+function ProviderTabs() {
+    return (
+        <Tab.Navigator
+            screenOptions={({ route }) => ({
+                headerShown: false,
+                tabBarIcon: ({ color, size }) => {
+                    const icons = {
+                        'Bookings': 'calendar-outline',
+                        'Disputes': 'shield-half',
+                    };
+                    return <Ionicons name={icons[route.name]} size={size} color={color} />;
+                },
+                tabBarActiveTintColor: THEME.colors.primary,
+                tabBarInactiveTintColor: THEME.colors.textMuted,
+                tabBarStyle: { height: 60, paddingBottom: 8 },
+            })}
+        >
+            <Tab.Screen name="Bookings" component={ProviderDashboard} />
+            <Tab.Screen name="Disputes" component={DisputeScreen} />
+        </Tab.Navigator>
+    );
+}
+
 function ProviderStack() {
     return (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="ProviderDashboard" component={ProviderDashboard} />
+            <Stack.Screen name="ProviderTabs" component={ProviderTabs} />
             <Stack.Screen name="ProviderJobDetail" component={ProviderJobDetail} />
         </Stack.Navigator>
     );

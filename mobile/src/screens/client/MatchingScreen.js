@@ -35,28 +35,30 @@ function ProviderCard({ provider, index, onSelect, isTopPick }) {
                 <View style={styles.cardInfo}>
                     <Text style={styles.providerName}>{provider.name}</Text>
                     <Text style={styles.providerMeta}>
-                        {provider.sector} · {provider.distanceKm?.toFixed(1)} km · ~{provider.travelTimeMinutes} min
+                        {provider.sector || ''} · {provider.distanceKm?.toFixed(1)} km · ~{provider.travelTimeMinutes} min
                     </Text>
                     <View style={styles.pillRow}>
                         <View style={styles.pill}>
-                            <Text style={styles.pillText}>⭐ {provider.rating}</Text>
+                            <Text style={styles.pillText}>⭐ {provider.rating || 'N/A'}</Text>
                         </View>
-                        <View style={[styles.pill, { backgroundColor: riskColor + '20' }]}>
-                            <Text style={[styles.pillText, { color: riskColor }]}>Risk: {provider.riskFlag}</Text>
-                        </View>
+                        {provider.riskFlag ? (
+                            <View style={[styles.pill, { backgroundColor: riskColor + '20' }]}>
+                                <Text style={[styles.pillText, { color: riskColor }]}>Risk: {provider.riskFlag}</Text>
+                            </View>
+                        ) : null}
                         <View style={styles.pill}>
-                            <Text style={styles.pillText}>⏱ {provider.onTimeRate}%</Text>
+                            <Text style={styles.pillText}>⏱ {provider.onTimeRate || 0}%</Text>
                         </View>
                     </View>
                 </View>
 
                 <View style={styles.scoreBox}>
-                    <Text style={styles.scoreNum}>{provider.aiScore || provider.score}</Text>
+                    <Text style={styles.scoreNum}>{provider.aiScore || provider.score || 0}</Text>
                     <Text style={styles.scoreLabel}>AI Score</Text>
                 </View>
             </View>
 
-            {provider.aiReason && (
+            {!!provider.aiReason && (
                 <View style={styles.reasonBox}>
                     <Ionicons name="bulb-outline" size={13} color={THEME.colors.accent} />
                     <Text style={styles.reasonText}>{provider.aiReason}</Text>
@@ -76,11 +78,11 @@ function ProviderCard({ provider, index, onSelect, isTopPick }) {
                     </View>
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Experience</Text>
-                        <Text style={styles.detailValue}>{provider.experienceYears} years</Text>
+                        <Text style={styles.detailValue}>{provider.experienceYears || 0} years</Text>
                     </View>
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Cancel Rate</Text>
-                        <Text style={styles.detailValue}>{(provider.cancellationRate * 100).toFixed(0)}%</Text>
+                        <Text style={styles.detailValue}>{((provider.cancellationRate || 0) * 100).toFixed(0)}%</Text>
                     </View>
                     {provider.certifications?.length > 0 && (
                         <View style={styles.certRow}>
@@ -117,7 +119,6 @@ export default function MatchingScreen({ navigation, route }) {
         try {
             const rawService = parsed?.service || 'ac_repair';
 
-            // Handle comma-separated string like "ac_repair, electrical"
             const serviceToMatch = typeof rawService === 'string' && rawService.includes(',')
                 ? rawService.split(',')[0].trim()
                 : Array.isArray(rawService)
@@ -177,7 +178,7 @@ export default function MatchingScreen({ navigation, route }) {
                 <View style={styles.headerCenter}>
                     <Text style={styles.headerTitle}>{providers.length} Providers Found</Text>
                     <Text style={styles.headerSub}>
-                        {serviceDisplay} · {parsed?.sector || user?.sector}
+                        {serviceDisplay} · {parsed?.sector || user?.sector || ''}
                     </Text>
                 </View>
                 <View style={[
@@ -200,7 +201,7 @@ export default function MatchingScreen({ navigation, route }) {
             )}
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                {trace && <ReasoningTraceBox trace={trace} />}
+                {!!trace && <ReasoningTraceBox trace={trace} />}
 
                 {providers.length === 0 ? (
                     <View style={styles.emptyState}>

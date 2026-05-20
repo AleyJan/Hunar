@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     ScrollView, StatusBar, ActivityIndicator,
@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { providerAPI } from '../../services/api';
+import api from '../../services/api';
 import { THEME } from '../../constants/theme';
 
 const TIME_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
@@ -20,6 +21,7 @@ const STATUS_COLORS = {
 export default function ProviderJobDetail({ navigation, route }) {
     const { booking } = route.params || {};
 
+    const [bookingStatus, setBookingStatus] = useState(booking?.status);
     const [loading, setLoading] = useState(false);
     const [showRejectBox, setShowRejectBox] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
@@ -27,6 +29,18 @@ export default function ProviderJobDetail({ navigation, route }) {
     const [selectedAltSlots, setSelectedAltSlots] = useState([]);
     const [actionDone, setActionDone] = useState(false);
     const [actionResult, setActionResult] = useState(null);
+
+    useEffect(() => {
+        const refreshStatus = async () => {
+            try {
+                const res = await api.get(`/book/${booking.bookingId}`);
+                setBookingStatus(res.data.data?.status);
+            } catch (err) {
+                console.log('Status refresh error:', err.message);
+            }
+        };
+        refreshStatus();
+    }, []);
 
     const handleAccept = async () => {
         Alert.alert(
@@ -39,6 +53,7 @@ export default function ProviderJobDetail({ navigation, route }) {
                         setLoading(true);
                         try {
                             const res = await providerAPI.acceptBooking(booking.bookingId);
+                            setBookingStatus('confirmed');
                             setActionDone(true);
                             setActionResult({ type: 'accepted', data: res.data });
                         } catch (err) {
@@ -71,10 +86,10 @@ export default function ProviderJobDetail({ navigation, route }) {
                 suggestedSlots: selectedAltSlots,
             });
 
+            setBookingStatus('provider_cancelled');
             setActionDone(true);
             setActionResult({ type: 'rejected', data: res.data, altSlots: selectedAltSlots });
         } catch (err) {
-            console.log('Reject error:', err.response?.data || err.message);
             Alert.alert('Error', 'Booking reject nahi hua. Try again.');
         } finally {
             setLoading(false);
@@ -156,6 +171,20 @@ export default function ProviderJobDetail({ navigation, route }) {
                     <Text style={styles.headerTitle}>Job Details</Text>
                     <Text style={styles.headerSub}>{booking?.bookingId}</Text>
                 </View>
+                {/* Live status badge */}
+                <View style={[styles.liveBadge, {
+                    backgroundColor: bookingStatus === 'confirmed'
+                        ? THEME.colors.success + '20'
+                        : THEME.colors.urgencyMedium + '20'
+                }]}>
+                    <Text style={[styles.liveBadgeText, {
+                        color: bookingStatus === 'confirmed'
+                            ? THEME.colors.success
+                            : THEME.colors.urgencyMedium
+                    }]}>
+                        {bookingStatus?.replace(/_/g, ' ').toUpperCase()}
+                    </Text>
+                </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
@@ -221,8 +250,8 @@ export default function ProviderJobDetail({ navigation, route }) {
                     ))}
                 </View>
 
-                {/* Accept/Reject buttons */}
-                {(booking?.status === 'pending' || booking?.status === 'confirmed') && !showRejectBox && (
+                {/* Accept/Reject buttons — only show if pending */}
+                {(bookingStatus === 'pending') && !showRejectBox && (
                     <View style={styles.actionRow}>
                         <TouchableOpacity
                             style={[styles.acceptBtn, loading && { opacity: 0.6 }]}
@@ -238,6 +267,16 @@ export default function ProviderJobDetail({ navigation, route }) {
                             <Ionicons name="close-circle-outline" size={20} color={THEME.colors.urgencyHigh} />
                             <Text style={styles.rejectBtnText}>Reject</Text>
                         </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* Already confirmed — show info */}
+                {bookingStatus === 'confirmed' && (
+                    <View style={styles.confirmedCard}>
+                        <Ionicons name="checkmark-circle" size={24} color={THEME.colors.success} />
+                        <Text style={styles.confirmedText}>
+                            Aap ne yeh booking accept kar li hai. Customer ko notify kar diya gaya.
+                        </Text>
                     </View>
                 )}
 
@@ -267,7 +306,7 @@ export default function ProviderJobDetail({ navigation, route }) {
 
                         {availOption === 'other_slots' && (
                             <View style={styles.altSlotsSection}>
-                                <Text style={styles.rejectSubTitle}>Kaunse slots available hain? (select karein)</Text>
+                                <Text style={styles.rejectSubTitle}>Kaunse slots available hain?</Text>
                                 <View style={styles.altSlotsGrid}>
                                     {TIME_SLOTS.map(slot => (
                                         <TouchableOpacity
@@ -315,15 +354,16 @@ export default function ProviderJobDetail({ navigation, route }) {
                     </View>
                 )}
 
-                {booking?.status !== 'pending' && booking?.status !== 'confirmed' && (
+                {/* Status info for other statuses */}
+                {bookingStatus !== 'pending' && bookingStatus !== 'confirmed' && !showRejectBox && (
                     <View style={styles.statusCard}>
                         <Ionicons
-                            name={booking?.status === 'completed' ? 'checkmark-circle' : 'information-circle'}
+                            name={bookingStatus === 'completed' ? 'checkmark-circle' : 'information-circle'}
                             size={24}
-                            color={STATUS_COLORS[booking?.status] || THEME.colors.textMuted}
+                            color={STATUS_COLORS[bookingStatus] || THEME.colors.textMuted}
                         />
                         <Text style={styles.statusCardText}>
-                            Yeh booking already {booking?.status?.replace(/_/g, ' ')} hai
+                            Yeh booking already {bookingStatus?.replace(/_/g, ' ')} hai
                         </Text>
                     </View>
                 )}
@@ -341,6 +381,8 @@ const styles = StyleSheet.create({
     },
     headerTitle: { fontSize: 16, fontWeight: '800', color: THEME.colors.white },
     headerSub: { fontSize: 12, color: THEME.colors.accent, marginTop: 2 },
+    liveBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+    liveBadgeText: { fontSize: 9, fontWeight: '800' },
     content: { padding: 16, gap: 14, paddingBottom: 40 },
 
     card: { backgroundColor: THEME.colors.white, borderRadius: 16, padding: 16, ...THEME.shadows.premium },
@@ -366,6 +408,13 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     },
     rejectBtnText: { color: THEME.colors.urgencyHigh, fontSize: 14, fontWeight: '700' },
+
+    confirmedCard: {
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14,
+        borderWidth: 1, borderColor: THEME.colors.success,
+    },
+    confirmedText: { fontSize: 13, color: THEME.colors.success, fontWeight: '600', flex: 1 },
 
     rejectCard: {
         backgroundColor: THEME.colors.white, borderRadius: 16, padding: 16,

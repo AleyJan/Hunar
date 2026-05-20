@@ -28,6 +28,10 @@ const disputeSchema = new mongoose.Schema(
     providerResponseAt: { type: Date },
     providerNote: { type: String },
 
+    // Human resolution details
+    humanResolutionStatus: { type: String, enum: ['pending', 'resolved', null], default: null },
+    humanResolutionDetails: { type: String },
+
     // Status flow: open → ai_resolved → provider_accepted/provider_rejected → human_review/closed
     status: {
       type: String,

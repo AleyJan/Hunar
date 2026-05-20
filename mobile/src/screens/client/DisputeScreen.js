@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity,
-    StatusBar, ActivityIndicator, RefreshControl,
+    StatusBar, ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -27,8 +27,25 @@ const ISSUE_LABELS = {
     other: 'Other',
 };
 
-function DisputeCard({ dispute }) {
-    const config = STATUS_CONFIG[dispute.status] || STATUS_CONFIG.open;
+const getDisputeStatusConfig = (dispute) => {
+    if (dispute.status === 'human_review') {
+        if (dispute.humanResolutionStatus === 'resolved') {
+            return { color: THEME.colors.success, icon: 'checkmark-circle-outline', label: 'Human Resolved' };
+        }
+        return { color: '#F97316', icon: 'people-outline', label: 'Human Referred' };
+    }
+    if (dispute.status === 'provider_accepted') {
+        return { color: THEME.colors.success, icon: 'checkmark-circle-outline', label: 'Issue Resolved' };
+    }
+    if (dispute.status === 'closed' && dispute.humanResolutionStatus === 'resolved') {
+        return { color: THEME.colors.success, icon: 'checkmark-circle-outline', label: 'Human Resolved' };
+    }
+    return STATUS_CONFIG[dispute.status] || STATUS_CONFIG.open;
+};
+
+function DisputeCard({ dispute, user, onRespond, onAdminResolve }) {
+    const config = getDisputeStatusConfig(dispute);
+    const isProvider = user?.role === 'provider';
 
     return (
         <View style={[styles.card, { borderLeftColor: config.color, borderLeftWidth: 4 }]}>
@@ -54,7 +71,7 @@ function DisputeCard({ dispute }) {
                 <View style={styles.resolutionBox}>
                     <View style={styles.resolutionHeader}>
                         <Ionicons name="bulb-outline" size={14} color="#8B5CF6" />
-                        <Text style={styles.resolutionTitle}>🤖 AI Resolution</Text>
+                        <Text style={styles.resolutionTitle}>🤖 AI Resolution Plan</Text>
                     </View>
                     <Text style={styles.resolutionText}>{dispute.resolutionReason}</Text>
 
@@ -70,18 +87,18 @@ function DisputeCard({ dispute }) {
                 </View>
             )}
 
-            {/* AI Reasoning (expandable) */}
+            {/* AI Reasoning */}
             {dispute.aiReasoning && (
                 <View style={styles.reasoningBox}>
-                    <Text style={styles.reasoningLabel}>AI Reasoning:</Text>
-                    <Text style={styles.reasoningText} numberOfLines={3}>{dispute.aiReasoning}</Text>
+                    <Text style={styles.reasoningLabel}>AI Mediation Logic:</Text>
+                    <Text style={styles.reasoningText} numberOfLines={4}>{dispute.aiReasoning}</Text>
                 </View>
             )}
 
-            {/* Provider response */}
+            {/* Provider response status */}
             {dispute.providerResponse && (
                 <View style={[styles.providerResponseBox,
-                { backgroundColor: dispute.providerResponse === 'accepted' ? '#F0FDF4' : '#FFF0F0' }
+                    { backgroundColor: dispute.providerResponse === 'accepted' ? '#F0FDF4' : '#FFF0F0' }
                 ]}>
                     <Ionicons
                         name={dispute.providerResponse === 'accepted' ? 'checkmark-circle' : 'close-circle'}
@@ -89,26 +106,69 @@ function DisputeCard({ dispute }) {
                         color={dispute.providerResponse === 'accepted' ? THEME.colors.success : THEME.colors.urgencyHigh}
                     />
                     <Text style={styles.providerResponseText}>
-                        Provider: {dispute.providerResponse === 'accepted' ? 'Resolution Accept Ki' : 'Resolution Reject Ki — Human Review Mein'}
+                        {isProvider
+                            ? `Aapne yeh AI decision ${dispute.providerResponse === 'accepted' ? 'ACCEPT' : 'REJECT'} kar dia hai.`
+                            : `Provider: ${dispute.providerResponse === 'accepted' ? 'Resolution Accept Ki' : 'Resolution Reject Ki — Human Review Mein'}`}
                     </Text>
                 </View>
             )}
 
-            {/* Human review notice */}
-            {dispute.status === 'human_review' && (
+            {/* Human review / referred notice */}
+            {(dispute.status === 'human_review' || dispute.humanResolutionStatus === 'resolved') && (
                 <View style={styles.humanReviewBox}>
-                    <Ionicons name="people-outline" size={14} color="#F97316" />
-                    <Text style={styles.humanReviewText}>
-                        Yeh dispute HUNAR team review kar rahi hai. 24-48 ghante mein jawab milega.
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                        <Ionicons 
+                            name={dispute.humanResolutionStatus === 'resolved' ? 'checkmark-circle-outline' : 'people-outline'} 
+                            size={14} 
+                            color={dispute.humanResolutionStatus === 'resolved' ? THEME.colors.success : '#F97316'} 
+                        />
+                        <Text style={[styles.humanReviewText, dispute.humanResolutionStatus === 'resolved' && { color: '#065F46' }]}>
+                            {dispute.humanResolutionStatus === 'resolved'
+                                ? `👨‍💼 Human Manager Verdict: ${dispute.humanResolutionDetails || 'Resolved successfully.'}`
+                                : `⚠️ Referred to Human Review. Team review kar rahi hai. Jald decision ho jayega.`}
+                        </Text>
+                    </View>
+
+                    {/* Hackathon Admin Resolve Trigger */}
+                    {dispute.humanResolutionStatus !== 'resolved' && (
+                        <TouchableOpacity 
+                            style={styles.adminResolveBtn} 
+                            onPress={() => onAdminResolve(dispute._id)}
+                        >
+                            <Ionicons name="shield-checkmark" size={12} color={THEME.colors.white} />
+                            <Text style={styles.adminResolveBtnText}>Demo Admin: Resolve Human Dispute</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
             )}
 
-            {/* Provider info */}
+            {/* Interactive Provider Respond Controls */}
+            {isProvider && dispute.status === 'ai_resolved' && !dispute.providerResponse && (
+                <View style={styles.actionRow}>
+                    <TouchableOpacity 
+                        style={[styles.actionBtn, styles.acceptBtn]} 
+                        onPress={() => onRespond(dispute._id, 'accepted')}
+                    >
+                        <Ionicons name="checkmark" size={14} color={THEME.colors.white} />
+                        <Text style={styles.actionBtnText}>Accept</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[styles.actionBtn, styles.rejectBtn]} 
+                        onPress={() => onRespond(dispute._id, 'rejected')}
+                    >
+                        <Ionicons name="close" size={14} color={THEME.colors.white} />
+                        <Text style={styles.actionBtnText}>Reject</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Info row */}
             <View style={styles.providerRow}>
-                <Ionicons name="person-outline" size={12} color={THEME.colors.textMuted} />
+                <Ionicons name={isProvider ? 'person-outline' : 'construct-outline'} size={12} color={THEME.colors.textMuted} />
                 <Text style={styles.providerName}>
-                    {dispute.providerId?.name} · ⭐{dispute.providerId?.rating}
+                    {isProvider 
+                        ? `Client: ${dispute.userId?.name} · 📞 ${dispute.userId?.phone}`
+                        : `Provider: ${dispute.providerId?.name} · ⭐ ${dispute.providerId?.rating || '0.0'}`}
                 </Text>
             </View>
         </View>
@@ -116,7 +176,7 @@ function DisputeCard({ dispute }) {
 }
 
 export default function DisputeScreen() {
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
     const [disputes, setDisputes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -136,16 +196,49 @@ export default function DisputeScreen() {
         }
     };
 
+    const handleProviderRespond = async (disputeId, response) => {
+        try {
+            const res = await api.patch(`/dispute/${disputeId}/provider-respond`, { 
+                response,
+                note: response === 'accepted' ? 'Accepted AI resolution plan.' : 'Rejected AI plan. Requires human review.'
+            });
+            Alert.alert(
+                'Success', 
+                response === 'accepted' 
+                    ? 'Aapne AI decision accept kar liya hai! Issue solved.' 
+                    : 'Decision rejected. Escalated to human review.'
+            );
+            fetchDisputes();
+        } catch (err) {
+            console.log('Provider respond error:', err.message);
+            Alert.alert('Error', 'Sufficient permissions nahi hain ya network issue hai.');
+        }
+    };
+
+    const handleAdminResolve = async (disputeId) => {
+        try {
+            await api.patch(`/dispute/${disputeId}/admin-resolve`, {
+                resolutionDetails: "Manager has reviewed the proof and resolved in client's favor with full refund.",
+                refundAmount: 500
+            });
+            Alert.alert('Demo Admin Success', 'Dispute solved by Human Admin! Notifications dispatched to both.');
+            fetchDisputes();
+        } catch (err) {
+            console.log('Admin resolve error:', err.message);
+            Alert.alert('Error', 'Could not mock admin resolution.');
+        }
+    };
+
     const filteredDisputes = disputes.filter(d => {
         if (filter === 'all') return true;
         if (filter === 'open') return ['open', 'ai_resolved'].includes(d.status);
         if (filter === 'review') return d.status === 'human_review';
-        if (filter === 'closed') return ['provider_accepted', 'closed'].includes(d.status);
+        if (filter === 'closed') return ['provider_accepted', 'closed'].includes(d.status) || d.humanResolutionStatus === 'resolved';
         return true;
     });
 
     const openCount = disputes.filter(d => ['open', 'ai_resolved'].includes(d.status)).length;
-    const reviewCount = disputes.filter(d => d.status === 'human_review').length;
+    const reviewCount = disputes.filter(d => d.status === 'human_review' && d.humanResolutionStatus !== 'resolved').length;
 
     if (loading) {
         return (
@@ -161,29 +254,36 @@ export default function DisputeScreen() {
 
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.headerTitle}>My Disputes</Text>
-                    <Text style={styles.headerSub}>{user?.name}</Text>
+                    <Text style={styles.headerTitle}>
+                        {user?.role === 'provider' ? 'Disputes Ledger' : 'My Disputes'}
+                    </Text>
+                    <Text style={styles.headerSub}>{user?.name} · {user?.role?.toUpperCase()}</Text>
                 </View>
-                <View style={styles.headerStats}>
-                    {openCount > 0 && (
-                        <View style={styles.statBadge}>
-                            <Text style={styles.statNum}>{openCount}</Text>
-                            <Text style={styles.statLabel}>Open</Text>
-                        </View>
-                    )}
-                    {reviewCount > 0 && (
-                        <View style={[styles.statBadge, { backgroundColor: 'rgba(249,115,22,0.2)' }]}>
-                            <Text style={[styles.statNum, { color: '#F97316' }]}>{reviewCount}</Text>
-                            <Text style={styles.statLabel}>Review</Text>
-                        </View>
-                    )}
+                <View style={styles.headerRight}>
+                    <View style={styles.headerStats}>
+                        {openCount > 0 && (
+                            <View style={styles.statBadge}>
+                                <Text style={styles.statNum}>{openCount}</Text>
+                                <Text style={styles.statLabel}>Action</Text>
+                            </View>
+                        )}
+                        {reviewCount > 0 && (
+                            <View style={[styles.statBadge, { backgroundColor: 'rgba(249,115,22,0.2)' }]}>
+                                <Text style={[styles.statNum, { color: '#F97316' }]}>{reviewCount}</Text>
+                                <Text style={styles.statLabel}>Referred</Text>
+                            </View>
+                        )}
+                    </View>
+                    <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+                        <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.7)" />
+                    </TouchableOpacity>
                 </View>
             </View>
 
             <View style={styles.filterRow}>
                 {[
                     { key: 'all', label: 'All' },
-                    { key: 'open', label: 'Open' },
+                    { key: 'open', label: 'Action Required' },
                     { key: 'review', label: 'Human Review' },
                     { key: 'closed', label: 'Closed' },
                 ].map(f => (
@@ -210,13 +310,22 @@ export default function DisputeScreen() {
                         colors={[THEME.colors.primary]}
                     />
                 }
-                renderItem={({ item }) => <DisputeCard dispute={item} />}
+                renderItem={({ item }) => (
+                    <DisputeCard 
+                        dispute={item} 
+                        user={user} 
+                        onRespond={handleProviderRespond} 
+                        onAdminResolve={handleAdminResolve}
+                    />
+                )}
                 ListEmptyComponent={
                     <View style={styles.emptyState}>
                         <Ionicons name="shield-checkmark-outline" size={48} color={THEME.colors.textMuted} />
                         <Text style={styles.emptyTitle}>Koi dispute nahi</Text>
                         <Text style={styles.emptySubTitle}>
-                            Service complete hone ke baad Rate Your Experience se dispute file karein
+                            {user?.role === 'provider'
+                                ? 'Mubarak ho! Aap ke khilaf koi dispute active nahi hai.'
+                                : 'Service complete hone ke baad Rate Your Experience se dispute file karein'}
                         </Text>
                     </View>
                 }
@@ -235,6 +344,8 @@ const styles = StyleSheet.create({
     },
     headerTitle: { fontSize: 20, fontWeight: '900', color: THEME.colors.white },
     headerSub: { fontSize: 12, color: THEME.colors.accent, marginTop: 2 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    logoutBtn: { padding: 4 },
     headerStats: { flexDirection: 'row', gap: 8 },
     statBadge: {
         alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)',
@@ -297,11 +408,29 @@ const styles = StyleSheet.create({
     providerResponseText: { fontSize: 12, fontWeight: '600', color: THEME.colors.textDark, flex: 1 },
 
     humanReviewBox: {
-        flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+        flexDirection: 'column', gap: 8,
         backgroundColor: '#FFF4ED', borderRadius: 8, padding: 8, marginBottom: 8,
         borderWidth: 1, borderColor: '#F97316',
     },
     humanReviewText: { fontSize: 11, color: '#92400E', flex: 1, lineHeight: 16 },
+
+    actionRow: {
+        flexDirection: 'row', gap: 10, marginTop: 8, marginBottom: 8,
+    },
+    actionBtn: {
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 6, paddingVertical: 10, borderRadius: 10,
+    },
+    acceptBtn: { backgroundColor: THEME.colors.success },
+    rejectBtn: { backgroundColor: THEME.colors.urgencyHigh },
+    actionBtnText: { color: THEME.colors.white, fontSize: 12, fontWeight: '800' },
+
+    adminResolveBtn: {
+        backgroundColor: '#2563EB', flexDirection: 'row', alignItems: 'center',
+        justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12,
+        borderRadius: 8, marginTop: 6, alignSelf: 'flex-start',
+    },
+    adminResolveBtnText: { color: THEME.colors.white, fontSize: 10, fontWeight: '700' },
 
     providerRow: {
         flexDirection: 'row', alignItems: 'center', gap: 4,

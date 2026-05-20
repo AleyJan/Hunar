@@ -29,8 +29,8 @@ Rules:
 - If user mentions 2+ services set multipleServices to true
 - Complexity: basic = cleaning/painting, intermediate = repair, complex = installation/overhaul
 - Confidence 0.95 if service AND sector both found
-- Confidence 0.75 if service found but no sector — this is SUFFICIENT to proceed
-- Confidence 0.50 if neither service nor sector found
+- Confidence 0.60 if service found but no sector
+- Confidence 0.40 if neither service nor sector found
 - preferredTime is ALWAYS set to "ASAP" — never null, never ask user for time
 - NEVER ask about time under any circumstances
 - Only ask ONE clarifying question maximum — only about service OR sector, never time
@@ -69,26 +69,19 @@ const intentParser = async (message, context = {}) => {
     // Always default time to ASAP — never leave null
     if (!parsed.preferredTime) parsed.preferredTime = "ASAP";
 
-    // Use user's saved sector if AI couldn't extract one
-    if (!parsed.sector && context.userSector) {
-      parsed.sector = context.userSector;
-      // Boost confidence since we now have sector
-      if (parsed.service && confidence < 0.75) {
-        parsed.confidence = 0.75;
-        confidence = 0.75;
-      }
-    }
+    // Do NOT automatically default to user's registered sector without asking in the chat.
+    // If parsed.sector is not mentioned in the chat message, we should ask them for clarification.
 
   } catch (err) {
     console.warn("⚠️  Groq API failed, using local parser:", err.message);
     usedFallback = true;
     parsed = {
       service: localService,
-      sector: context.userSector || null,
+      sector: null, // Do not default to context.userSector
       urgency: localUrgency,
       preferredTime: "ASAP",
       budgetSensitivity: "normal",
-      confidence: localService ? 0.75 : 0.4,
+      confidence: localService ? 0.6 : 0.4,
       detectedLanguage: language,
       correctedMessage: message,
       jobComplexity: "basic",
@@ -97,9 +90,9 @@ const intentParser = async (message, context = {}) => {
     confidence = parsed.confidence;
   }
 
-  // Only ask clarifying question if BOTH service and sector are missing
+  // Ask clarifying question if either service or sector is missing
   // Never ask about time
-  const needsClarification = !parsed.service || (!parsed.sector && !context.userSector && confidence < 0.6);
+  const needsClarification = !parsed.service || !parsed.sector;
   let clarifyingQuestion = null;
 
   if (needsClarification) {

@@ -1,22 +1,22 @@
 // ============================================================
 // HUNAR Route — src/routes/tracking.js
-// GET   /api/tracking/:bookingId  — Get current status
-// PATCH /api/tracking/:bookingId  — Update status (provider side)
 // ============================================================
 const express = require("express");
 const { protect } = require("../middleware/auth");
 const Booking = require("../models/Booking");
 const qualityLoop = require("../agent/steps/qualityLoop");
+
 const router = express.Router();
 
 const VALID_STATUSES = ["en_route", "arrived", "in_progress", "completed"];
 
-const getAutoStatus = (createdAt) => {
-  const minutesElapsed = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60);
-  if (minutesElapsed < 3) return { status: "confirmed", message: "Booking confirmed — provider will be assigned shortly" };
-  if (minutesElapsed < 7) return { status: "en_route", message: "Provider is on the way to your location" };
-  if (minutesElapsed < 12) return { status: "arrived", message: "Provider has arrived at your location" };
-  if (minutesElapsed < 20) return { status: "in_progress", message: "Service is currently in progress" };
+// Faster progression for demo — 1-2 minutes per step
+const getAutoStatus = (confirmedAt) => {
+  const secondsElapsed = (Date.now() - new Date(confirmedAt).getTime()) / 1000;
+  if (secondsElapsed < 15) return { status: "confirmed", message: "Booking confirmed — provider will be assigned shortly" };
+  if (secondsElapsed < 30) return { status: "en_route", message: "Provider is on the way to your location" };
+  if (secondsElapsed < 45) return { status: "arrived", message: "Provider has arrived at your location" };
+  if (secondsElapsed < 60) return { status: "in_progress", message: "Service is currently in progress" };
   return { status: "completed", message: "Service has been completed successfully" };
 };
 
@@ -30,7 +30,7 @@ router.get("/:bookingId", protect, async (req, res, next) => {
     if (!booking)
       return res.status(404).json({ status: "error", message: "Booking not found" });
 
-    // If pending — hold tracking, don't auto progress
+    // Pending — hold tracking
     if (booking.status === "pending") {
       return res.json({
         status: "success",
@@ -52,10 +52,10 @@ router.get("/:bookingId", protect, async (req, res, next) => {
       });
     }
 
-    // Auto-progress status based on time since confirmation
+    // Auto-progress based on time since confirmation
     const autoStatus = getAutoStatus(booking.confirmedAt || booking.createdAt);
 
-    // Update status in DB if it has progressed
+    // Update status in DB if progressed
     if (autoStatus.status !== booking.status && VALID_STATUSES.includes(autoStatus.status)) {
       booking.status = autoStatus.status;
       if (autoStatus.status === "completed") booking.completedAt = new Date();
@@ -64,7 +64,6 @@ router.get("/:bookingId", protect, async (req, res, next) => {
 
     const currentStatus = autoStatus.status;
 
-    // Completion checklist
     let completionChecklist = null;
     if (currentStatus === "completed") {
       completionChecklist = {
@@ -73,8 +72,7 @@ router.get("/:bookingId", protect, async (req, res, next) => {
         customerSatisfactionConfirmed: true,
         paymentCollected: true,
         receiptIssued: true,
-        photoEvidencePlaceholder: "https://hunar-uploads.s3.amazonaws.com/evidence/placeholder-job-photo.jpg",
-        videoEvidencePlaceholder: null,
+        photoEvidencePlaceholder: "https://hunar-uploads.s3.amazonaws.com/evidence/placeholder.jpg",
         checklistCompletedAt: new Date(),
         nextStep: "Please rate your experience to help future users",
       };
@@ -96,8 +94,8 @@ router.get("/:bookingId", protect, async (req, res, next) => {
       step: "SERVICE_QUALITY_LOOP",
       reasoning: `Booking ${req.params.bookingId} status: ${currentStatus}. ${autoStatus.message}.`,
       decision: currentStatus === "completed"
-        ? "Service complete — completion checklist generated, feedback requested"
-        : `Status progressed to ${currentStatus} based on time elapsed since confirmation`,
+        ? "Service complete — checklist generated, feedback requested"
+        : `Status progressed to ${currentStatus}`,
       confidence: 1.0,
     };
 
@@ -109,6 +107,7 @@ router.get("/:bookingId", protect, async (req, res, next) => {
         statusMessage: autoStatus.message,
         eta: etaMap[currentStatus],
         scheduledAt: booking.scheduledAt,
+        confirmedAt: booking.confirmedAt,
         provider: booking.providerId,
         serviceType: booking.serviceType,
         providerLocation,

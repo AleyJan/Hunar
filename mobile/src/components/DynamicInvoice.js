@@ -24,7 +24,7 @@ export default function DynamicInvoice({ pricing }) {
             <View style={styles.row}>
                 <View>
                     <Text style={styles.label}>Travel Fee</Text>
-                    {distanceKm && <Text style={styles.subtext}>({distanceKm?.toFixed(1)} km @ Rs. 50/km)</Text>}
+                    {!!distanceKm && <Text style={styles.subtext}>({distanceKm?.toFixed(1)} km @ Rs. 50/km)</Text>}
                 </View>
                 <Text style={styles.value}>Rs. {distanceFee}</Text>
             </View>

@@ -217,4 +217,27 @@ router.patch("/:id/provider-cancel", protect, async (req, res, next) => {
   }
 });
 
+
+// PATCH /api/book/:id/add-photo
+router.patch("/:id/add-photo", protect, async (req, res, next) => {
+  try {
+    const { photoUrl } = req.body;
+    if (!photoUrl)
+      return res.status(400).json({ status: "error", message: "photoUrl required" });
+
+    const booking = await Booking.findOneAndUpdate(
+      { bookingId: req.params.id },
+      { $push: { photos: photoUrl } },
+      { new: true }
+    );
+
+    if (!booking)
+      return res.status(404).json({ status: "error", message: "Booking not found" });
+
+    res.json({ status: "success", data: { photos: booking.photos } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

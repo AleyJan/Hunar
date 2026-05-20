@@ -32,12 +32,63 @@ const STATUS_ICONS = {
     disputed: 'alert-circle-outline',
 };
 
-function BookingCard({ booking, onPress }) {
+function AltProviderCard({ provider, onBook }) {
+    return (
+        <TouchableOpacity style={styles.altProviderCard} onPress={() => onBook(provider)}>
+            <View style={styles.altProviderAvatar}>
+                <Text style={styles.altProviderAvatarText}>
+                    {provider.name?.slice(0, 2).toUpperCase()}
+                </Text>
+            </View>
+            <View style={styles.altProviderInfo}>
+                <Text style={styles.altProviderName}>{provider.name}</Text>
+                <Text style={styles.altProviderMeta}>
+                    {provider.sector} · ⭐{provider.rating} · Rs{provider.hourlyRate}/hr
+                </Text>
+            </View>
+            <View style={styles.altProviderScore}>
+                <Text style={styles.altProviderScoreNum}>{provider.aiScore || provider.score}</Text>
+                <Text style={styles.altProviderScoreLabel}>AI Score</Text>
+            </View>
+            <Ionicons name="arrow-forward" size={16} color={THEME.colors.primary} />
+        </TouchableOpacity>
+    );
+}
+
+function BookingCard({ booking, onPress, onBookAlternative }) {
     const statusColor = STATUS_COLORS[booking.status] || THEME.colors.textMuted;
     const statusIcon = STATUS_ICONS[booking.status] || 'help-outline';
 
+    const [altProviders, setAltProviders] = useState([]);
+    const [loadingAlt, setLoadingAlt] = useState(false);
+    const [showAlt, setShowAlt] = useState(false);
+    const [altLoaded, setAltLoaded] = useState(false);
+
+    const fetchAlternatives = async () => {
+        if (altLoaded) { setShowAlt(true); return; }
+        setShowAlt(true);
+        setLoadingAlt(true);
+        try {
+            const res = await api.post('/match', {
+                service: booking.serviceType,
+                location: booking.sector,
+                urgency: booking.urgency || 'medium',
+            });
+            setAltProviders(res.data.data?.top3?.slice(0, 3) || []);
+            setAltLoaded(true);
+        } catch (err) {
+            console.log('Alt providers error:', err.message);
+        } finally {
+            setLoadingAlt(false);
+        }
+    };
+
     return (
-        <TouchableOpacity style={styles.card} onPress={() => onPress(booking)}>
+        <TouchableOpacity
+            style={styles.card}
+            onPress={() => onPress(booking)}
+            activeOpacity={['cancelled', 'provider_cancelled'].includes(booking.status) ? 1 : 0.7}
+        >
             <View style={styles.cardHeader}>
                 <View style={styles.serviceIcon}>
                     <Ionicons name="construct-outline" size={18} color={THEME.colors.primary} />
@@ -78,15 +129,15 @@ function BookingCard({ booking, onPress }) {
                 )}
             </View>
 
-            {/* Provider cancelled — show suggested slots */}
+            {/* Provider cancelled */}
             {booking.status === 'provider_cancelled' && (
                 <View style={styles.cancelledCard}>
                     <Text style={styles.cancelledTitle}>❌ Provider ne reject kar diya</Text>
-                    {booking.suggestedSlots?.length > 0 ? (
-                        <View>
-                            <Text style={styles.cancelledSub}>
-                                Provider in slots mein available hai:
-                            </Text>
+
+                    {/* Suggested slots */}
+                    {booking.suggestedSlots?.length > 0 && (
+                        <View style={styles.suggestedSlotsSection}>
+                            <Text style={styles.cancelledSub}>Provider in slots mein available hai:</Text>
                             <View style={styles.suggestedRow}>
                                 {booking.suggestedSlots.map(slot => (
                                     <View key={slot} style={styles.suggestedChip}>
@@ -94,15 +145,50 @@ function BookingCard({ booking, onPress }) {
                                     </View>
                                 ))}
                             </View>
-                            <Text style={styles.cancelledHint}>
-                                Usi provider ko doosre slot pe book karne ke liye AI Assistant use karein
-                            </Text>
                         </View>
-                    ) : (
-                        <Text style={styles.cancelledSub}>
-                            Doosra provider dhundhne ke liye AI Assistant use karein
-                        </Text>
                     )}
+
+                    {/* Load alternatives on demand */}
+                    <TouchableOpacity style={styles.showAltBtn} onPress={fetchAlternatives}>
+                        <Ionicons name="search-outline" size={14} color={THEME.colors.primary} />
+                        <Text style={styles.showAltBtnText}>
+                            {showAlt ? 'Alternative Providers' : 'AI se Alternative Providers Dhundho'}
+                        </Text>
+                        {!showAlt && <Ionicons name="chevron-down" size={14} color={THEME.colors.primary} />}
+                    </TouchableOpacity>
+
+                    {showAlt && (
+                        <View style={styles.altProvidersSection}>
+                            {loadingAlt ? (
+                                <View style={styles.altLoadingRow}>
+                                    <ActivityIndicator size="small" color={THEME.colors.primary} />
+                                    <Text style={styles.altLoadingText}>AI providers dhundh raha hai...</Text>
+                                </View>
+                            ) : altProviders.length > 0 ? (
+                                altProviders.map((p, i) => (
+                                    <AltProviderCard
+                                        key={i}
+                                        provider={p}
+                                        onBook={(provider) => onBookAlternative(booking, provider)}
+                                    />
+                                ))
+                            ) : (
+                                <Text style={styles.cancelledSub}>
+                                    Koi alternative provider nahi mila. Kal subah try karein.
+                                </Text>
+                            )}
+                        </View>
+                    )}
+                </View>
+            )}
+
+            {/* Cancelled by user */}
+            {booking.status === 'cancelled' && (
+                <View style={styles.cancelledCard}>
+                    <Text style={styles.cancelledTitle}>🚫 Booking Cancel Ho Gayi</Text>
+                    <Text style={styles.cancelledSub}>
+                        {booking.cancellationReason || 'Aap ne yeh booking cancel ki thi'}
+                    </Text>
                 </View>
             )}
         </TouchableOpacity>
@@ -110,7 +196,7 @@ function BookingCard({ booking, onPress }) {
 }
 
 export default function TrackingScreen({ navigation }) {
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
     const [bookings, setBookings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -131,6 +217,16 @@ export default function TrackingScreen({ navigation }) {
     };
 
     const onRefresh = () => { setRefreshing(true); fetchBookings(); };
+
+    const handleBookAlternative = (originalBooking, provider) => {
+        const parsed = {
+            service: originalBooking.serviceType,
+            sector: originalBooking.sector,
+            urgency: originalBooking.urgency || 'medium',
+            complexity: originalBooking.complexity || 'intermediate',
+        };
+        navigation.navigate('Booking', { provider, parsed, pricing: null });
+    };
 
     const filteredBookings = bookings.filter(b => {
         if (filter === 'all') return true;
@@ -162,21 +258,26 @@ export default function TrackingScreen({ navigation }) {
                     <Text style={styles.headerTitle}>My Bookings</Text>
                     <Text style={styles.headerSub}>{user?.name}</Text>
                 </View>
-                <View style={styles.headerStats}>
-                    <View style={styles.statBadge}>
-                        <Text style={styles.statNum}>{activeCount}</Text>
-                        <Text style={styles.statLabel}>Active</Text>
-                    </View>
-                    <View style={styles.statBadge}>
-                        <Text style={styles.statNum}>{completedCount}</Text>
-                        <Text style={styles.statLabel}>Done</Text>
-                    </View>
-                    {cancelledCount > 0 && (
-                        <View style={[styles.statBadge, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
-                            <Text style={[styles.statNum, { color: THEME.colors.urgencyHigh }]}>{cancelledCount}</Text>
-                            <Text style={styles.statLabel}>Cancelled</Text>
+                <View style={styles.headerRight}>
+                    <View style={styles.headerStats}>
+                        <View style={styles.statBadge}>
+                            <Text style={styles.statNum}>{activeCount}</Text>
+                            <Text style={styles.statLabel}>Active</Text>
                         </View>
-                    )}
+                        <View style={styles.statBadge}>
+                            <Text style={styles.statNum}>{completedCount}</Text>
+                            <Text style={styles.statLabel}>Done</Text>
+                        </View>
+                        {cancelledCount > 0 && (
+                            <View style={[styles.statBadge, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
+                                <Text style={[styles.statNum, { color: THEME.colors.urgencyHigh }]}>{cancelledCount}</Text>
+                                <Text style={styles.statLabel}>Cancelled</Text>
+                            </View>
+                        )}
+                    </View>
+                    <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+                        <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.7)" />
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -201,12 +302,12 @@ export default function TrackingScreen({ navigation }) {
                     <BookingCard
                         booking={item}
                         onPress={(b) => {
-                            if (['pending', 'confirmed', 'en_route', 'arrived', 'in_progress'].includes(b.status)) {
+                            const navigable = ['pending', 'confirmed', 'en_route', 'arrived', 'in_progress', 'completed'];
+                            if (navigable.includes(b.status)) {
                                 navigation.navigate('Tracking', { booking: b });
-                            } else if (b.status === 'completed' && !b.rating) {
-                                navigation.navigate('Feedback', { booking: b });
                             }
                         }}
+                        onBookAlternative={handleBookAlternative}
                     />
                 )}
                 contentContainerStyle={styles.listContent}
@@ -245,6 +346,8 @@ const styles = StyleSheet.create({
     },
     headerTitle: { fontSize: 20, fontWeight: '900', color: THEME.colors.white },
     headerSub: { fontSize: 12, color: THEME.colors.accent, marginTop: 2 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    logoutBtn: { padding: 4 },
     headerStats: { flexDirection: 'row', gap: 8 },
     statBadge: {
         alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)',
@@ -254,11 +357,9 @@ const styles = StyleSheet.create({
     statLabel: { fontSize: 9, color: 'rgba(255,255,255,0.7)' },
 
     filterRow: {
-        flexDirection: 'row',
-        backgroundColor: THEME.colors.white,
+        flexDirection: 'row', backgroundColor: THEME.colors.white,
         paddingHorizontal: 12, paddingVertical: 8,
-        borderBottomWidth: 1, borderBottomColor: THEME.colors.border,
-        gap: 6,
+        borderBottomWidth: 1, borderBottomColor: THEME.colors.border, gap: 6,
     },
     filterTab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: THEME.colors.border },
     filterTabActive: { backgroundColor: THEME.colors.primary, borderColor: THEME.colors.primary },
@@ -268,8 +369,7 @@ const styles = StyleSheet.create({
     listContent: { padding: 16, gap: 12, paddingBottom: 40 },
 
     card: {
-        backgroundColor: THEME.colors.white,
-        borderRadius: 16, padding: 14,
+        backgroundColor: THEME.colors.white, borderRadius: 16, padding: 14,
         borderWidth: 1, borderColor: THEME.colors.border,
         ...THEME.shadows.premium, marginBottom: 4,
     },
@@ -292,8 +392,7 @@ const styles = StyleSheet.create({
     cardFooter: {
         flexDirection: 'row', alignItems: 'center',
         marginTop: 10, paddingTop: 10,
-        borderTopWidth: 0.5, borderTopColor: THEME.colors.border,
-        gap: 10,
+        borderTopWidth: 0.5, borderTopColor: THEME.colors.border, gap: 10,
     },
     amount: { fontSize: 13, fontWeight: '700', color: THEME.colors.primary },
     sector: { fontSize: 12, color: THEME.colors.textMuted, flex: 1 },
@@ -306,16 +405,47 @@ const styles = StyleSheet.create({
         marginTop: 10, paddingTop: 10,
         borderTopWidth: 0.5, borderTopColor: THEME.colors.border,
     },
-    cancelledTitle: { fontSize: 12, fontWeight: '700', color: THEME.colors.urgencyHigh, marginBottom: 6 },
-    cancelledSub: { fontSize: 11, color: THEME.colors.textMuted, marginBottom: 6 },
-    cancelledHint: { fontSize: 10, color: THEME.colors.textMuted, marginTop: 4, fontStyle: 'italic' },
-    suggestedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    cancelledTitle: { fontSize: 12, fontWeight: '700', color: THEME.colors.urgencyHigh, marginBottom: 8 },
+    cancelledSub: { fontSize: 11, color: THEME.colors.textMuted, marginTop: 4 },
+
+    suggestedSlotsSection: { marginBottom: 8 },
+    suggestedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
     suggestedChip: {
         backgroundColor: '#FFF8E7',
         borderWidth: 1, borderColor: THEME.colors.accent,
         paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
     },
     suggestedChipText: { fontSize: 11, color: THEME.colors.accent, fontWeight: '700' },
+
+    showAltBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        backgroundColor: THEME.colors.primaryLight,
+        borderRadius: 10, padding: 10, marginTop: 8,
+    },
+    showAltBtnText: { fontSize: 12, color: THEME.colors.primary, fontWeight: '600', flex: 1 },
+
+    altProvidersSection: { gap: 8, marginTop: 8 },
+    altLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 },
+    altLoadingText: { fontSize: 12, color: THEME.colors.textMuted },
+
+    altProviderCard: {
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        backgroundColor: THEME.colors.primaryLight,
+        borderRadius: 12, padding: 10,
+        borderWidth: 1, borderColor: THEME.colors.primary + '30',
+    },
+    altProviderAvatar: {
+        width: 36, height: 36, borderRadius: 10,
+        backgroundColor: THEME.colors.primary,
+        alignItems: 'center', justifyContent: 'center',
+    },
+    altProviderAvatarText: { color: THEME.colors.white, fontWeight: '800', fontSize: 12 },
+    altProviderInfo: { flex: 1 },
+    altProviderName: { fontSize: 13, fontWeight: '700', color: THEME.colors.textDark },
+    altProviderMeta: { fontSize: 11, color: THEME.colors.textMuted, marginTop: 2 },
+    altProviderScore: { alignItems: 'center', marginRight: 4 },
+    altProviderScoreNum: { fontSize: 18, fontWeight: '900', color: THEME.colors.primary },
+    altProviderScoreLabel: { fontSize: 9, color: THEME.colors.textMuted },
 
     emptyState: { alignItems: 'center', paddingTop: 60, gap: 12 },
     emptyTitle: { fontSize: 18, fontWeight: '700', color: THEME.colors.textDark },
