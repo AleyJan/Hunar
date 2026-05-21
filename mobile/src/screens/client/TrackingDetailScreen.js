@@ -5,7 +5,7 @@ import {
     Share, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as ImagePicker from 'expo-image-picker';
 import { serviceAPI } from '../../services/api';
 import api from '../../services/api';
@@ -394,7 +394,7 @@ Pakistan's AI Service Platform
                 {/* Google Map */}
                 <View style={styles.mapCard}>
                     <MapView
-                        provider={PROVIDER_GOOGLE}
+
                         style={styles.realMap}
                         region={mapRegion}
                         showsTraffic={false}

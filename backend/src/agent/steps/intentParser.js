@@ -49,21 +49,28 @@ const SERVICE_NAMES = {
   mechanics: "Mechanics",
 };
 
+// Normalize sector format: "i 8", "G13", "g 13" → "I-8", "G-13"
+const normalizeSectors = (msg) => {
+  return msg.replace(/\b([A-Za-z])\s*-?\s*(\d{1,2})\b/g, (match, letter, num) => {
+    const normalized = `${letter.toUpperCase()}-${num}`;
+    return VALID_ISLAMABAD_SECTORS.has(normalized) ? normalized : match;
+  });
+};
+
 // Extract budget amount from message
 const extractBudget = (message) => {
   const msg = message.toLowerCase();
-  // Match patterns like "400 rs", "Rs 400", "400 rupees", "400 ka budget", "sirf 400"
   const patterns = [
-    /(?:rs\.?|rupees?|pkr)[\s.]*([\d,]+)/i,
-    /([\d,]+)[\s.]*(?:rs\.?|rupees?|pkr)/i,
+    /(?:rs\.?|rupees?|ruppee?s?|pkr)[\s.]*([\d,]+)/i,
+    /([\d,]+)[\s.]*(?:rs\.?|rupees?|ruppee?s?|pkr)/i,
     /(?:budget|limit|sirf|only|bas)[\s.]*(?:rs\.?|rupees?)?[\s.]*([\d,]+)/i,
-    /([\d,]+)[\s.]*(?:ka budget|mein|se kam|se zyada)/i,
+    /([\d,]+)[\s.]*(?:ka budget|se kam|se zyada)/i,
   ];
   for (const pattern of patterns) {
     const match = msg.match(pattern);
     if (match) {
       const num = parseInt(match[1].replace(/,/g, ''));
-      if (num > 0 && num < 100000) return num;
+      if (num > 200 && num < 100000) return num;
     }
   }
   return null;
@@ -82,7 +89,7 @@ const detectOtherCity = (message) => {
   return otherCities.find(city => msg.includes(city)) || null;
 };
 
-// Budget response in appropriate language
+// Budget response
 const getBudgetResponse = (language, budget, service, minRate) => {
   const serviceName = SERVICE_NAMES[service] || service;
   if (language === 'roman_urdu' || language === 'mixed') {
@@ -119,7 +126,7 @@ Return exactly this shape:
   "urgency": "high or medium or low",
   "preferredTime": "ASAP",
   "budgetSensitivity": "price_sensitive or normal or premium",
-  "budgetAmount": null or number if user mentioned specific amount like 400 or 500,
+  "budgetAmount": null,
   "confidence": 0.0 to 1.0,
   "detectedLanguage": "english or roman_urdu or urdu or mixed",
   "correctedMessage": "cleaned version of the message",
@@ -132,24 +139,26 @@ Rules:
 - Price sensitive signals: sasta, budget nahi, mehnga mat, affordable, kam paise mein, sirf X rupees
 - Extract sector ONLY if it is an Islamabad sector (G-13, F-10, H-8, I-9, E-7 etc)
 - If user mentions a city name like Lahore, Karachi, Peshawar — set sector to null
-- Always normalize sector format: G13 → G-13, g-13 → G-13, G 13 → G-13
+- Always normalize sector format: G13 → G-13, g-13 → G-13, G 13 → G-13, i 8 → I-8
 - If user mentions 2+ services set multipleServices to true
 - Complexity: basic = cleaning/painting, intermediate = repair, complex = installation/overhaul
 - Confidence 0.95 if service AND sector both found
 - Confidence 0.60 if service found but no sector
 - Confidence 0.40 if neither service nor sector found
 - preferredTime is ALWAYS set to "ASAP"
-- NEVER ask about time under any circumstances
-- budgetAmount: extract the number if user says things like "Rs 400", "sirf 500 mein", "400 ka budget"`;
+- NEVER ask about time under any circumstances`;
 
 const intentParser = async (message, context = {}) => {
   const startTime = Date.now();
 
-  const language = detectLanguage(message);
-  const localUrgency = detectUrgency(message);
-  const localService = extractService(message);
-  const userBudget = extractBudget(message);
-  const otherCity = detectOtherCity(message);
+  // Normalize sector format FIRST — before any processing
+  const normalizedMessage = normalizeSectors(message);
+
+  const language = detectLanguage(normalizedMessage);
+  const localUrgency = detectUrgency(normalizedMessage);
+  const localService = extractService(normalizedMessage);
+  const userBudget = extractBudget(normalizedMessage);
+  const otherCity = detectOtherCity(normalizedMessage);
 
   let parsed = {};
   let confidence = 0;
@@ -160,7 +169,7 @@ const intentParser = async (message, context = {}) => {
       model: "llama-3.1-8b-instant",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: message },
+        { role: "user", content: normalizedMessage },
       ],
       temperature: 0.1,
       max_tokens: 400,
@@ -188,7 +197,7 @@ const intentParser = async (message, context = {}) => {
       budgetAmount: userBudget,
       confidence: localService ? 0.6 : 0.4,
       detectedLanguage: language,
-      correctedMessage: message,
+      correctedMessage: normalizedMessage,
       jobComplexity: "basic",
       multipleServices: false,
     };
@@ -257,7 +266,7 @@ const intentParser = async (message, context = {}) => {
 
   const trace = {
     step: "INTENT_UNDERSTANDING",
-    input: { message, context },
+    input: { message: normalizedMessage, context },
     reasoning:
       `Detected language: ${parsed.detectedLanguage || language}. ` +
       `Service: ${parsed.service || "none"}. ` +
