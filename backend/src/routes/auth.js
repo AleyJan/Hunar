@@ -32,6 +32,12 @@ router.post("/register", async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Is phone number se account pehle se exist karta hai. Login karein.',
+      });
+    }
     next(err);
   }
 });

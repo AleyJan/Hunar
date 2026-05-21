@@ -41,8 +41,8 @@ function ClientTabs() {
 
     useEffect(() => {
         fetchBadge();
-        // const interval = setInterval(fetchBadge, 20000);
-        // return () => clearInterval(interval);
+        const interval = setInterval(fetchBadge, 20000);
+        return () => clearInterval(interval);
     }, []);
 
     const fetchBadge = async () => {

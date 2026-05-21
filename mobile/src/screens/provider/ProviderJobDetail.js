@@ -19,9 +19,10 @@ const STATUS_COLORS = {
 };
 
 export default function ProviderJobDetail({ navigation, route }) {
-    const { booking } = route.params || {};
+    const { booking: initialBooking } = route.params || {};
 
-    const [bookingStatus, setBookingStatus] = useState(booking?.status);
+    const [bookingData, setBookingData] = useState(initialBooking);
+    const [bookingStatus, setBookingStatus] = useState(initialBooking?.status);
     const [loading, setLoading] = useState(false);
     const [showRejectBox, setShowRejectBox] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
@@ -31,21 +32,25 @@ export default function ProviderJobDetail({ navigation, route }) {
     const [actionResult, setActionResult] = useState(null);
 
     useEffect(() => {
-        const refreshStatus = async () => {
+        const refreshBooking = async () => {
             try {
-                const res = await api.get(`/book/${booking.bookingId}`);
-                setBookingStatus(res.data.data?.status);
+                const res = await api.get(`/book/${initialBooking.bookingId}`);
+                const data = res.data.data;
+                setBookingStatus(data?.status);
+                setBookingData(data); // full fresh booking with rating/review
             } catch (err) {
-                console.log('Status refresh error:', err.message);
+                console.log('Booking refresh error:', err.message);
             }
         };
-        refreshStatus();
+        refreshBooking();
     }, []);
+
+    const booking = bookingData; // use fresh data throughout
 
     const handleAccept = async () => {
         Alert.alert(
             'Booking Accept Karein?',
-            `${booking.userId?.name} ki booking accept karna chahte hain?`,
+            `${booking?.userId?.name} ki booking accept karna chahte hain?`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -119,10 +124,9 @@ export default function ProviderJobDetail({ navigation, route }) {
                         </Text>
                         <Text style={styles.resultSub}>
                             {isAccepted
-                                ? `User ${booking.userId?.name} ko notify kar diya gaya.`
-                                : `User ${booking.userId?.name} ko alternatives ke saath notify kar diya gaya.`}
+                                ? `User ${booking?.userId?.name} ko notify kar diya gaya.`
+                                : `User ${booking?.userId?.name} ko alternatives ke saath notify kar diya gaya.`}
                         </Text>
-
                         {!isAccepted && actionResult?.altSlots?.length > 0 && (
                             <View style={styles.altCard}>
                                 <Text style={styles.altTitle}>Aapke suggested slots user ko bheje gaye:</Text>
@@ -135,7 +139,6 @@ export default function ProviderJobDetail({ navigation, route }) {
                                 </View>
                             </View>
                         )}
-
                         {!isAccepted && actionResult?.data?.alternatives?.length > 0 && (
                             <View style={styles.altCard}>
                                 <Text style={styles.altTitle}>AI ne yeh alternative providers suggest kiye:</Text>
@@ -150,7 +153,6 @@ export default function ProviderJobDetail({ navigation, route }) {
                             </View>
                         )}
                     </View>
-
                     <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
                         <Text style={styles.backBtnText}>Dashboard pe Wapas Jao</Text>
                     </TouchableOpacity>
@@ -171,16 +173,19 @@ export default function ProviderJobDetail({ navigation, route }) {
                     <Text style={styles.headerTitle}>Job Details</Text>
                     <Text style={styles.headerSub}>{booking?.bookingId}</Text>
                 </View>
-                {/* Live status badge */}
                 <View style={[styles.liveBadge, {
                     backgroundColor: bookingStatus === 'confirmed'
                         ? THEME.colors.success + '20'
-                        : THEME.colors.urgencyMedium + '20'
+                        : bookingStatus === 'completed'
+                            ? THEME.colors.primary + '20'
+                            : THEME.colors.urgencyMedium + '20'
                 }]}>
                     <Text style={[styles.liveBadgeText, {
                         color: bookingStatus === 'confirmed'
                             ? THEME.colors.success
-                            : THEME.colors.urgencyMedium
+                            : bookingStatus === 'completed'
+                                ? THEME.colors.primary
+                                : THEME.colors.urgencyMedium
                     }]}>
                         {bookingStatus?.replace(/_/g, ' ').toUpperCase()}
                     </Text>
@@ -189,12 +194,13 @@ export default function ProviderJobDetail({ navigation, route }) {
 
             <ScrollView contentContainerStyle={styles.content}>
 
+                {/* Customer Details */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Customer Details</Text>
                     {[
-                        { icon: 'person-outline', value: booking?.userId?.name },
-                        { icon: 'call-outline', value: booking?.userId?.phone },
-                        { icon: 'location-outline', value: `${booking?.sector} · ${booking?.userId?.sector}` },
+                        { icon: 'person-outline', value: booking?.userId?.name || '' },
+                        { icon: 'call-outline', value: booking?.userId?.phone || '' },
+                        { icon: 'location-outline', value: `${booking?.sector || ''} · ${booking?.userId?.sector || ''}` },
                     ].map((item, i) => (
                         <View key={i} style={styles.infoRow}>
                             <Ionicons name={item.icon} size={16} color={THEME.colors.primary} />
@@ -203,14 +209,18 @@ export default function ProviderJobDetail({ navigation, route }) {
                     ))}
                 </View>
 
+                {/* Job Details */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Job Details</Text>
                     {[
-                        { icon: 'construct-outline', label: 'Service', value: booking?.serviceType?.replace(/_/g, ' ').toUpperCase() },
-                        { icon: 'calendar-outline', label: 'Scheduled', value: new Date(booking?.scheduledAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' }) },
-                        { icon: 'flash-outline', label: 'Urgency', value: booking?.urgency?.toUpperCase() },
-                        { icon: 'layers-outline', label: 'Complexity', value: booking?.complexity },
+                        { icon: 'construct-outline', label: 'Service', value: booking?.serviceType?.replace(/_/g, ' ').toUpperCase() || '' },
+                        { icon: 'calendar-outline', label: 'Scheduled', value: booking?.scheduledAt ? new Date(booking.scheduledAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' }) : '' },
+                        { icon: 'flash-outline', label: 'Urgency', value: booking?.urgency?.toUpperCase() || '' },
+                        { icon: 'layers-outline', label: 'Complexity', value: booking?.complexity || '' },
                         { icon: 'cash-outline', label: 'Your Earnings', value: `Rs. ${Math.round((booking?.pricing?.totalAmount || 0) * 0.9)} (90%)` },
+                        ...(bookingStatus === 'completed' && booking?.rating ? [
+                            { icon: 'star', label: 'User Rating', value: `⭐ ${booking.rating}/5` },
+                        ] : []),
                     ].map((item, i) => (
                         <View key={i} style={styles.detailRow}>
                             <View style={styles.detailLeft}>
@@ -221,6 +231,7 @@ export default function ProviderJobDetail({ navigation, route }) {
                                 styles.detailValue,
                                 item.label === 'Your Earnings' && { color: THEME.colors.primary, fontWeight: '800' },
                                 item.label === 'Urgency' && booking?.urgency === 'high' && { color: THEME.colors.urgencyHigh },
+                                item.label === 'User Rating' && { color: THEME.colors.accent, fontWeight: '800' },
                             ]}>
                                 {item.value}
                             </Text>
@@ -228,13 +239,14 @@ export default function ProviderJobDetail({ navigation, route }) {
                     ))}
                 </View>
 
+                {/* Price Breakdown */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Price Breakdown</Text>
                     {[
-                        { label: 'Base Rate', value: `Rs. ${booking?.pricing?.baseRate}` },
-                        { label: 'Distance Fee', value: `Rs. ${booking?.pricing?.distanceFee}` },
-                        { label: 'Urgency', value: `Rs. ${booking?.pricing?.urgencyPremium}` },
-                        { label: 'Total', value: `Rs. ${booking?.pricing?.totalAmount}`, bold: true },
+                        { label: 'Base Rate', value: `Rs. ${booking?.pricing?.baseRate || 0}` },
+                        { label: 'Distance Fee', value: `Rs. ${booking?.pricing?.distanceFee || 0}` },
+                        { label: 'Urgency', value: `Rs. ${booking?.pricing?.urgencyPremium || 0}` },
+                        { label: 'Total', value: `Rs. ${booking?.pricing?.totalAmount || 0}`, bold: true },
                         { label: 'Your Share 90%', value: `Rs. ${Math.round((booking?.pricing?.totalAmount || 0) * 0.9)}`, green: true },
                     ].map((item, i) => (
                         <View key={i} style={[styles.detailRow, item.bold && { borderTopWidth: 2, borderTopColor: THEME.colors.primary, marginTop: 4, paddingTop: 8 }]}>
@@ -250,8 +262,42 @@ export default function ProviderJobDetail({ navigation, route }) {
                     ))}
                 </View>
 
-                {/* Accept/Reject buttons — only show if pending */}
-                {(bookingStatus === 'pending') && !showRejectBox && (
+                {/* Rating Card — shown when completed and rated */}
+                {bookingStatus === 'completed' && booking?.rating > 0 && (
+                    <View style={styles.ratingResultCard}>
+                        <View style={styles.ratingResultHeader}>
+                            <Ionicons name="star" size={20} color={THEME.colors.accent} />
+                            <Text style={styles.ratingResultTitle}>Customer Ne Diya Rating</Text>
+                        </View>
+                        <View style={styles.starsRow}>
+                            {[1, 2, 3, 4, 5].map(star => (
+                                <Ionicons
+                                    key={star}
+                                    name={star <= booking.rating ? 'star' : 'star-outline'}
+                                    size={28}
+                                    color={THEME.colors.accent}
+                                />
+                            ))}
+                            <Text style={styles.ratingNum}>{booking.rating}/5</Text>
+                        </View>
+                        {booking.review ? (
+                            <View style={styles.reviewBox}>
+                                <Ionicons name="chatbubble-outline" size={14} color={THEME.colors.textMuted} />
+                                <Text style={styles.reviewText}>"{booking.review}"</Text>
+                            </View>
+                        ) : null}
+                        <Text style={styles.ratingImpact}>
+                            {booking.rating >= 4
+                                ? '✅ Zabardast! Yeh rating aapki reputation improve karegi!'
+                                : booking.rating === 3
+                                    ? '⚠️ Average rating — service quality improve karein'
+                                    : '❌ Low rating — aapki matching score affect hogi'}
+                        </Text>
+                    </View>
+                )}
+
+                {/* Accept/Reject — only when pending */}
+                {bookingStatus === 'pending' && !showRejectBox && (
                     <View style={styles.actionRow}>
                         <TouchableOpacity
                             style={[styles.acceptBtn, loading && { opacity: 0.6 }]}
@@ -270,7 +316,7 @@ export default function ProviderJobDetail({ navigation, route }) {
                     </View>
                 )}
 
-                {/* Already confirmed — show info */}
+                {/* Confirmed info */}
                 {bookingStatus === 'confirmed' && (
                     <View style={styles.confirmedCard}>
                         <Ionicons name="checkmark-circle" size={24} color={THEME.colors.success} />
@@ -284,7 +330,6 @@ export default function ProviderJobDetail({ navigation, route }) {
                 {showRejectBox && (
                     <View style={styles.rejectCard}>
                         <Text style={styles.rejectTitle}>Kyun reject kar rahe hain?</Text>
-
                         <Text style={styles.rejectSubTitle}>Kya aap available hain?</Text>
                         <View style={styles.availabilityRow}>
                             {[
@@ -337,7 +382,10 @@ export default function ProviderJobDetail({ navigation, route }) {
                         />
 
                         <View style={styles.rejectActions}>
-                            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowRejectBox(false); setAvailOption(''); setSelectedAltSlots([]); }}>
+                            <TouchableOpacity
+                                style={styles.cancelBtn}
+                                onPress={() => { setShowRejectBox(false); setAvailOption(''); setSelectedAltSlots([]); }}
+                            >
                                 <Text style={styles.cancelBtnText}>Wapas Jao</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -354,19 +402,16 @@ export default function ProviderJobDetail({ navigation, route }) {
                     </View>
                 )}
 
-                {/* Status info for other statuses */}
-                {bookingStatus !== 'pending' && bookingStatus !== 'confirmed' && !showRejectBox && (
-                    <View style={styles.statusCard}>
-                        <Ionicons
-                            name={bookingStatus === 'completed' ? 'checkmark-circle' : 'information-circle'}
-                            size={24}
-                            color={STATUS_COLORS[bookingStatus] || THEME.colors.textMuted}
-                        />
-                        <Text style={styles.statusCardText}>
-                            Yeh booking already {bookingStatus?.replace(/_/g, ' ')} hai
-                        </Text>
-                    </View>
-                )}
+                {/* Other status info */}
+                {bookingStatus !== 'pending' && bookingStatus !== 'confirmed' &&
+                    bookingStatus !== 'completed' && !showRejectBox && (
+                        <View style={styles.statusCard}>
+                            <Ionicons name="information-circle" size={24} color={STATUS_COLORS[bookingStatus] || THEME.colors.textMuted} />
+                            <Text style={styles.statusCardText}>
+                                Yeh booking already {bookingStatus?.replace(/_/g, ' ')} hai
+                            </Text>
+                        </View>
+                    )}
 
             </ScrollView>
         </View>
@@ -397,6 +442,21 @@ const styles = StyleSheet.create({
     detailLabel: { fontSize: 12, color: THEME.colors.textMuted },
     detailValue: { fontSize: 13, fontWeight: '600', color: THEME.colors.textDark },
 
+    ratingResultCard: {
+        backgroundColor: THEME.colors.white, borderRadius: 16, padding: 16,
+        ...THEME.shadows.premium, borderWidth: 2, borderColor: THEME.colors.accent,
+    },
+    ratingResultHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+    ratingResultTitle: { fontSize: 15, fontWeight: '700', color: THEME.colors.textDark },
+    starsRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10 },
+    ratingNum: { fontSize: 20, fontWeight: '900', color: THEME.colors.accent, marginLeft: 8 },
+    reviewBox: {
+        flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+        backgroundColor: THEME.colors.bgLight, borderRadius: 10, padding: 10, marginBottom: 10,
+    },
+    reviewText: { fontSize: 13, color: THEME.colors.textDark, flex: 1, fontStyle: 'italic' },
+    ratingImpact: { fontSize: 12, color: THEME.colors.textMuted, fontWeight: '600' },
+
     actionRow: { flexDirection: 'row', gap: 12 },
     acceptBtn: {
         flex: 1, backgroundColor: THEME.colors.primary, borderRadius: 14, paddingVertical: 14,
@@ -422,20 +482,17 @@ const styles = StyleSheet.create({
     },
     rejectTitle: { fontSize: 15, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 12 },
     rejectSubTitle: { fontSize: 13, fontWeight: '600', color: THEME.colors.textDark, marginBottom: 8 },
-
     availabilityRow: { gap: 8, marginBottom: 12 },
     availOption: { padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: THEME.colors.border, backgroundColor: THEME.colors.bgLight },
     availOptionActive: { borderColor: THEME.colors.primary, backgroundColor: THEME.colors.primaryLight },
     availOptionText: { fontSize: 13, color: THEME.colors.textDark },
     availOptionTextActive: { color: THEME.colors.primary, fontWeight: '700' },
-
     altSlotsSection: { marginBottom: 8 },
     altSlotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     altSlotBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: THEME.colors.border, backgroundColor: THEME.colors.bgLight },
     altSlotBtnActive: { backgroundColor: THEME.colors.primary, borderColor: THEME.colors.primary },
     altSlotText2: { fontSize: 12, fontWeight: '600', color: THEME.colors.textDark },
     altSlotTextActive2: { color: THEME.colors.white },
-
     rejectInput: {
         backgroundColor: THEME.colors.bgLight, borderRadius: 10, padding: 12,
         fontSize: 14, color: THEME.colors.textDark, textAlignVertical: 'top',
@@ -446,10 +503,8 @@ const styles = StyleSheet.create({
     cancelBtnText: { fontSize: 14, color: THEME.colors.textMuted, fontWeight: '600' },
     confirmRejectBtn: { flex: 1, backgroundColor: THEME.colors.urgencyHigh, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
     confirmRejectBtnText: { fontSize: 14, color: THEME.colors.white, fontWeight: '700' },
-
     statusCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: THEME.colors.bgLight, borderRadius: 12, padding: 14 },
     statusCardText: { fontSize: 14, color: THEME.colors.textDark, fontWeight: '500' },
-
     resultCard: { backgroundColor: THEME.colors.white, borderRadius: 16, padding: 24, alignItems: 'center', gap: 12, ...THEME.shadows.premium },
     resultTitle: { fontSize: 20, fontWeight: '900', color: THEME.colors.textDark, textAlign: 'center' },
     resultSub: { fontSize: 13, color: THEME.colors.textMuted, textAlign: 'center', lineHeight: 20 },

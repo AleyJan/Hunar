@@ -1,3 +1,7 @@
+// ============================================================
+// HUNAR Agent Step 3 — src/agent/steps/scheduler.js
+// Travel-buffer aware slot scheduling with Groq AI
+// ============================================================
 const getBookings = require("../../tools/getBookings");
 const Groq = require("groq-sdk");
 
@@ -21,12 +25,10 @@ const scheduler = async ({ providerId, requestedTime, travelBufferMinutes = 15, 
     };
   }
 
-  // ── Step 1: Get existing bookings for this provider ─────
   const requestedDate = new Date(requestedTime);
   const date = requestedDate.toISOString().split("T")[0];
   const { bookings } = await getBookings(providerId, date);
 
-  // ── Step 2: Build context for Groq ─────────────────────
   const existingSlots = bookings.map((b) => ({
     time: b.scheduledAt,
     duration: "60 minutes",
@@ -50,16 +52,8 @@ Determine:
 3. Consider realistic working hours: 8:00 AM to 8:00 PM only
 4. If the provider is fully booked for the entire day, set alternativeSlots to empty array
 
-Return ONLY valid JSON, no markdown:
-{
-  "isAvailable": true or false,
-  "conflictReason": "why slot is taken or null if available",
-  "alternativeSlots": ["HH:MM", "HH:MM", "HH:MM"] or [],
-  "travelBufferApplied": true or false,
-  "reasoning": "step by step explanation of your decision",
-  "recommendation": "brief advice for the user",
-  "fullyBooked": true or false
-}`;
+Return ONLY valid JSON with no extra text, no markdown, no explanation. Start with { and end with }:
+{"isAvailable":true,"conflictReason":null,"alternativeSlots":[],"travelBufferApplied":true,"reasoning":"brief reason","recommendation":"brief advice","fullyBooked":false}`;
 
   let aiDecision;
   let groqFailed = false;
@@ -69,13 +63,20 @@ Return ONLY valid JSON, no markdown:
       model: "llama-3.1-8b-instant",
       messages: [{ role: "user", content: groqPrompt }],
       temperature: 0.1,
-      max_tokens: 500,
+      max_tokens: 300,
     });
 
-    const text = completion.choices[0].message.content.trim()
-      .replace(/```json\n?/g, "")
-      .replace(/```\n?/g, "")
-      .trim();
+    let text = completion.choices[0].message.content.trim();
+
+    // Aggressive JSON extraction — find first { to last }
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      text = text.slice(firstBrace, lastBrace + 1);
+    }
+
+    // Remove any remaining markdown
+    text = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 
     aiDecision = JSON.parse(text);
 
@@ -100,7 +101,6 @@ Return ONLY valid JSON, no markdown:
     };
   }
 
-  // ── Waitlist logic — offered when provider is fully booked ─
   const allSlotsTaken = !aiDecision.isAvailable &&
     (aiDecision.alternativeSlots.length === 0 || aiDecision.fullyBooked);
 

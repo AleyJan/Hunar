@@ -1,4 +1,4 @@
-const getProviders = require("../../tools/getProviders");
+const { getProviders } = require("../../tools/getProviders");
 const getDistance = require("../../tools/getDistance");
 const Groq = require("groq-sdk");
 const {

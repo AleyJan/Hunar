@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "HUNAR",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,20 +10,34 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0B3D2E"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": "AIzaSyBfx7uLAwSDi0A_5a-vbECyM9_2n_NTMU4"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0B3D2E"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.alijan.dev.mobile",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBfx7uLAwSDi0A_5a-vbECyM9_2n_NTMU4"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7a128a6a-a2f3-497d-a1be-a0316d8d0d3f"
+      }
     }
   }
 }

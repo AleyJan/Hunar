@@ -1,0 +1,121 @@
+# Implementation Plan — Multi-Role Dispute Resolution Workflow
+
+This plan outlines the design and architectural steps to implement a complete dispute resolution loop between clients, providers, and a human-in-the-loop review system.
+
+---
+
+## 1. Database Schema Enhancements (`Dispute.js`)
+
+We will update the `Dispute` Mongoose model to track the state of human-referred cases once a provider rejects the AI-generated resolution.
+
+```javascript
+// Addition to disputeSchema:
+humanResolutionStatus: {
+  type: String,
+  enum: ['pending', 'resolved', null],
+  default: null
+},
+humanResolutionDetails: { type: String }
+```
+
+### Proposed Status Lifecycle Matrix:
+| Event / Trigger | Dispute `status` | `providerResponse` | `humanResolutionStatus` |
+| :--- | :--- | :--- | :--- |
+| User files dispute | `ai_resolved` | `null` | `null` |
+| Provider **Accepts** AI choice | `provider_accepted` | `accepted` | `null` (Resolved) |
+| Provider **Rejects** AI choice | `human_review` | `rejected` | `pending` (Referred) |
+| Admin resolves dispute | `closed` | `rejected` | `resolved` (Resolved) |
+
+---
+
+## 2. Backend API Logic (`routes/dispute.js`)
+
+We will update and refine two key endpoints inside the backend's dispute router:
+
+### A. Polymorphic Querying (`GET /api/dispute/my-disputes`)
+Instead of assuming only users query this endpoint, we will check the authenticated caller's role. If the caller is a provider, we query based on `providerId`; if a user, we query based on `userId`.
+```javascript
+const query = req.user.role === 'provider' 
+  ? { providerId: req.user._id }
+  : { userId: req.user._id };
+```
+
+### B. Interactive Response Endpoint (`PATCH /api/dispute/:id/provider-respond`)
+Update the handler to:
+1. Validate that the logged-in user is indeed the assigned provider.
+2. Update state:
+   - **If accepted**: Set `status = 'provider_accepted'`, notify client of resolution.
+   - **If rejected**: Set `status = 'human_review'`, `humanResolutionStatus = 'pending'`, notify client of escalation.
+3. Automatically dispatch real-time user notification to the client.
+
+---
+
+## 3. Frontend Navigation (`AppNavigator.js`)
+
+We will introduce a bottom tab bar experience for providers, consistent with the clean client-side navigation system.
+
+```mermaid
+graph TD
+    A[Welcome / Login] --> B{User Role?}
+    B -->|Client| C[ClientTabs]
+    B -->|Provider| D[ProviderTabs]
+    
+    C --> C1[AI Assistant]
+    C --> C2[My Bookings]
+    C --> C3[Disputes Screen]
+    
+    D --> D1[Bookings Dashboard]
+    D --> D2[Disputes Screen - Reused!]
+```
+
+* **Reusability benefit:** Reusing `DisputeScreen` saves code bloat and guarantees that updates to dispute card styling apply universally to both roles.
+
+---
+
+## 4. Polished Dispute UI (`DisputeScreen.js`)
+
+We will upgrade `DisputeScreen.js` to act contextually based on the user's active role:
+
+### A. For Providers
+When a dispute's status is `ai_resolved` and the provider response is pending, we will present a premium interactive glassmorphism control panel:
+* **"Accept AI Decision" Button:** Green, high-tactility button.
+* **"Reject AI Decision" Button:** Red, clean outline button.
+
+### B. For Clients
+* Instantly show the provider's response state inside the dispute card (e.g. *"Provider has accepted the resolution. Refund processed!"* or *"Provider rejected. Under Human Review"*).
+* Display human referred statuses (`Pending` vs. `Resolved`) with a clear, beautiful timeline indicator.
+
+---
+
+## 5. Sequence Diagram of the Loop
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client / User
+    actor Provider as Provider / Karigar
+    participant Server as Node.js Backend
+    participant Groq as Groq AI
+
+    Client->>Server: Files dispute (e.g. Poor Quality)
+    Server->>Groq: Request Mediation
+    Groq-->>Server: JSON Resolution (Refund 30%)
+    Server-->>Client: Real-time Notify (AI Decided)
+    Server-->>Provider: Real-time Notify (Action Required)
+    
+    Note over Provider: Views Dispute Tab
+    alt Provider ACCEPTS AI decision
+        Provider->>Server: Respond ('accepted')
+        Server-->>Client: Notify ("Issue Resolved!")
+    else Provider REJECTS AI decision
+        Provider->>Server: Respond ('rejected')
+        Server-->>Client: Notify ("Escalated to Human")
+        Note over Server: Status = 'human_review'<br/>Human Status = 'pending'
+    end
+```
+
+---
+
+## 📝 Discussion Questions
+1. **Mock Admin Actions:** Would you like us to add a mock admin resolution endpoint or scheduler task that automatically resolves human-review disputes after some time for testing?
+2. **Notification Alert:** Do you want standard push notifications simulated (in-app alerts) or should we keep it strictly in the notification history?

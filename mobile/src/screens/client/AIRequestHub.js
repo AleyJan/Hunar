@@ -34,6 +34,8 @@ export default function AIRequestHub({ navigation }) {
     const [lastTrace, setLastTrace] = useState(null);
     const [conversation, setConversation] = useState('');
     const [awaitingReply, setAwaitingReply] = useState(false);
+    // Track what we're waiting for — 'service', 'location', or null
+    const [awaitingField, setAwaitingField] = useState(null);
 
     const addMessage = (msg) => {
         setMessages(prev => [...prev, { id: Date.now().toString(), ...msg }]);
@@ -48,13 +50,12 @@ export default function AIRequestHub({ navigation }) {
         addMessage({ isUser: true, text: message });
         setLoading(true);
 
-        // Build full conversation context
-        const fullContext = conversation
-            ? `${conversation}. User added: ${message}`
-            : message;
-
-        // Update conversation memory
-        setConversation(fullContext);
+        // Build context — only accumulate if we're waiting for a specific field
+        // Never accumulate city-blocked or budget-blocked conversations
+        let fullContext = message;
+        if (awaitingReply && awaitingField && conversation) {
+            fullContext = `${conversation}. ${awaitingField === 'location' ? 'Location' : 'Service'}: ${message}`;
+        }
 
         try {
             const res = await serviceAPI.parseRequest(fullContext, user?.sector || 'G-13');
@@ -65,15 +66,29 @@ export default function AIRequestHub({ navigation }) {
             setLastTrace(trace);
 
             if (data.needsClarification) {
-                setAwaitingReply(true);
+                // If blocked by city/budget/invalid sector — reset conversation fully
+                if (data.blocked === 'city' || data.blocked === 'budget' || data.blocked === 'sector') {
+                    setConversation('');
+                    setAwaitingReply(false);
+                    setAwaitingField(null);
+                } else {
+                    // Missing service or location — accumulate context
+                    const missingField = !parsed.service ? 'service' : 'location';
+                    setAwaitingField(missingField);
+                    setConversation(fullContext);
+                    setAwaitingReply(true);
+                }
+
                 addMessage({
                     isUser: false,
                     text: data.clarifyingQuestion,
                     isClarification: true,
                 });
+
             } else {
                 setAwaitingReply(false);
-                setConversation(''); // reset after successful parse
+                setAwaitingField(null);
+                setConversation('');
 
                 const summary =
                     `Samajh gaya! Yeh mila:\n\n` +
@@ -167,9 +182,7 @@ export default function AIRequestHub({ navigation }) {
             {awaitingReply && (
                 <View style={styles.contextBanner}>
                     <Ionicons name="chatbubble-ellipses" size={13} color={THEME.colors.accent} />
-                    <Text style={styles.contextText}>
-                        Context yaad hai — bas jawab do
-                    </Text>
+                    <Text style={styles.contextText}>Context yaad hai — bas jawab do</Text>
                 </View>
             )}
 
@@ -185,6 +198,7 @@ export default function AIRequestHub({ navigation }) {
                             onPress={() => {
                                 setConversation('');
                                 setAwaitingReply(false);
+                                setAwaitingField(null);
                                 handleSend(item);
                             }}
                         >
@@ -224,12 +238,8 @@ export default function AIRequestHub({ navigation }) {
 const styles = StyleSheet.create({
     header: {
         backgroundColor: THEME.colors.primaryDark,
-        paddingTop: 50,
-        paddingBottom: 16,
-        paddingHorizontal: 20,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        paddingTop: 50, paddingBottom: 16, paddingHorizontal: 20,
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     },
     headerTitle: { fontSize: 20, fontWeight: '900', color: THEME.colors.white, letterSpacing: 2 },
     headerSub: { fontSize: 12, color: THEME.colors.accent, marginTop: 2 },
@@ -244,10 +254,8 @@ const styles = StyleSheet.create({
     onlineText: { color: THEME.colors.white, fontSize: 11, fontWeight: '600' },
     logoutBtn: { padding: 4 },
     chatArea: {
-        padding: 16,
-        paddingBottom: 8,
-        backgroundColor: THEME.colors.bgLight,
-        flexGrow: 1,
+        padding: 16, paddingBottom: 8,
+        backgroundColor: THEME.colors.bgLight, flexGrow: 1,
     },
     typingRow: {
         flexDirection: 'row', alignItems: 'center',
@@ -258,23 +266,18 @@ const styles = StyleSheet.create({
     contextBanner: {
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: THEME.colors.accentLight,
-        paddingHorizontal: 16, paddingVertical: 6,
-        gap: 6,
+        paddingHorizontal: 16, paddingVertical: 6, gap: 6,
     },
     contextText: { fontSize: 11, color: THEME.colors.accent, fontWeight: '600' },
     quickRow: {
         backgroundColor: THEME.colors.bgLight,
         paddingVertical: 10,
-        borderTopWidth: 0.5,
-        borderTopColor: THEME.colors.border,
+        borderTopWidth: 0.5, borderTopColor: THEME.colors.border,
     },
     quickChip: {
         backgroundColor: THEME.colors.primaryLight,
-        borderRadius: 20,
-        paddingHorizontal: 14,
-        paddingVertical: 7,
-        borderWidth: 1,
-        borderColor: THEME.colors.primary,
+        borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7,
+        borderWidth: 1, borderColor: THEME.colors.primary,
     },
     quickChipText: { color: THEME.colors.primary, fontSize: 12, fontWeight: '600' },
     inputRow: {
@@ -284,10 +287,8 @@ const styles = StyleSheet.create({
         borderTopWidth: 0.5, borderTopColor: THEME.colors.border,
     },
     input: {
-        flex: 1,
-        backgroundColor: THEME.colors.bgLight,
-        borderRadius: 20,
-        paddingHorizontal: 16, paddingVertical: 10,
+        flex: 1, backgroundColor: THEME.colors.bgLight,
+        borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10,
         fontSize: 14, color: THEME.colors.textDark,
         maxHeight: 100, borderWidth: 1, borderColor: THEME.colors.border,
     },

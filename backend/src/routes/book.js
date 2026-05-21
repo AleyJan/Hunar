@@ -13,15 +13,8 @@ const router = express.Router();
 router.post("/", protect, async (req, res, next) => {
   try {
     console.log("📦 Book route body:", JSON.stringify(req.body));
-    const result = await bookingSimulator({
-      ...req.body,
-      userId: req.user._id,
-    });
-    res.status(201).json({
-      status: "success",
-      step: "BOOKING_CONFIRMED",
-      data: result,
-    });
+    const result = await bookingSimulator({ ...req.body, userId: req.user._id });
+    res.status(201).json({ status: "success", step: "BOOKING_CONFIRMED", data: result });
   } catch (err) {
     next(err);
   }
@@ -58,12 +51,6 @@ router.post("/payment-confirm", protect, async (req, res, next) => {
         bookingId,
         holdExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
         retryAllowed: true,
-        agentTrace: {
-          step: "PAYMENT_CONFIRMATION",
-          reasoning: "Payment gateway returned failure. Booking placed on 10-minute hold.",
-          decision: "Retry payment within 10 minutes or slot will be released",
-          confidence: 0.0,
-        },
       });
     }
 
@@ -79,12 +66,6 @@ router.post("/payment-confirm", protect, async (req, res, next) => {
         amountPaid: booking.pricing?.totalAmount,
         paidAt: new Date(),
         receipt: `HUNAR-RCPT-${Date.now()}`,
-        agentTrace: {
-          step: "PAYMENT_CONFIRMATION",
-          reasoning: `Payment of Rs ${booking.pricing?.totalAmount} received via ${paymentMethod}. Booking confirmed.`,
-          decision: "Payment successful — booking status updated to confirmed",
-          confidence: 1.0,
-        },
       },
     });
   } catch (err) {
@@ -93,27 +74,37 @@ router.post("/payment-confirm", protect, async (req, res, next) => {
 });
 
 // GET /api/book/slots/:providerId/:date — MUST be before /:id
+// date format: "2026-05-21"
 router.get("/slots/:providerId/:date", protect, async (req, res, next) => {
   try {
-    const date = req.params.date; // e.g. "2026-05-21"
+    const { providerId, date } = req.params; // date = "2026-05-21"
 
-    // Get active bookings for this provider
+    // Build start/end of the requested date in UTC
+    // Pakistan is UTC+5, so "2026-05-21 00:00 PKT" = "2026-05-20 19:00 UTC"
+    // We store scheduledAt in UTC, so convert date boundaries to UTC
+    const dateStartPKT = new Date(`${date}T00:00:00+05:00`); // midnight PKT
+    const dateEndPKT = new Date(`${date}T23:59:59+05:00`); // end of day PKT
+
+    // ── Active bookings for THIS DATE ONLY ─────────────────
     const activeBookings = await Booking.find({
-      providerId: req.params.providerId,
+      providerId,
       status: { $in: ["pending", "confirmed", "en_route", "arrived", "in_progress"] },
+      scheduledAt: { $gte: dateStartPKT, $lte: dateEndPKT },
     }).select("scheduledAt");
 
-    // Convert UTC time to Pakistan time (UTC+5)
+    // Convert UTC scheduledAt → PKT hour:minute string
     const bookedSlots = activeBookings.map(b => {
       const d = new Date(b.scheduledAt);
-      const pkTime = new Date(d.getTime() + 5 * 60 * 60 * 1000);
-      return `${String(pkTime.getUTCHours()).padStart(2, '0')}:${String(pkTime.getUTCMinutes()).padStart(2, '0')}`;
+      const pkMs = d.getTime() + 5 * 60 * 60 * 1000;
+      const pkDate = new Date(pkMs);
+      return `${String(pkDate.getUTCHours()).padStart(2, '0')}:${String(pkDate.getUTCMinutes()).padStart(2, '0')}`;
     });
 
-    // Get rejected/cancelled bookings for this provider
+    // ── Rejected/cancelled bookings for THIS DATE ONLY ──────
     const rejectedBookings = await Booking.find({
-      providerId: req.params.providerId,
+      providerId,
       status: "provider_cancelled",
+      scheduledAt: { $gte: dateStartPKT, $lte: dateEndPKT },
     }).select("scheduledAt rejectedSlots suggestedSlots providerUnavailableToday");
 
     let rejectedSlots = [];
@@ -121,25 +112,17 @@ router.get("/slots/:providerId/:date", protect, async (req, res, next) => {
     let unavailableToday = false;
 
     for (const b of rejectedBookings) {
-      // Convert booking date to PK time for comparison
-      const d = new Date(b.scheduledAt);
-      const pkTime = new Date(d.getTime() + 5 * 60 * 60 * 1000);
-      const bookingDate = pkTime.toISOString().split('T')[0];
-
-      if (bookingDate === date) {
-        if (b.providerUnavailableToday) {
-          unavailableToday = true;
-          rejectedSlots = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
-        } else if (b.rejectedSlots?.length > 0) {
-          rejectedSlots = [...rejectedSlots, ...b.rejectedSlots];
-        }
-        if (b.suggestedSlots?.length > 0) {
-          suggestedSlots = [...suggestedSlots, ...b.suggestedSlots];
-        }
+      if (b.providerUnavailableToday) {
+        unavailableToday = true;
+        rejectedSlots = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+      } else if (b.rejectedSlots?.length > 0) {
+        rejectedSlots = [...rejectedSlots, ...b.rejectedSlots];
+      }
+      if (b.suggestedSlots?.length > 0) {
+        suggestedSlots = [...suggestedSlots, ...b.suggestedSlots];
       }
     }
 
-    // Remove duplicates and filter
     const uniqueBooked = [...new Set(bookedSlots)];
     const uniqueRejected = [...new Set(rejectedSlots)];
     const uniqueSuggested = [...new Set(suggestedSlots)]
@@ -161,8 +144,8 @@ router.get("/slots/:providerId/:date", protect, async (req, res, next) => {
 router.get("/:id", protect, async (req, res, next) => {
   try {
     const booking = await Booking.findOne({ bookingId: req.params.id })
-      .populate("userId", "name phone")
-      .populate("providerId", "name phone rating");
+      .populate("userId", "name phone sector")
+      .populate("providerId", "name phone rating sector");
     if (!booking)
       return res.status(404).json({ status: "error", message: "Booking not found" });
     res.json({ status: "success", data: booking });
@@ -199,10 +182,7 @@ router.patch("/:id/provider-cancel", protect, async (req, res, next) => {
       return res.status(404).json({ status: "error", message: "Booking not found" });
 
     const newMatches = await providerMatcher(
-      booking.serviceType,
-      booking.sector,
-      booking.urgency,
-      booking.userId
+      booking.serviceType, booking.sector, booking.urgency, booking.userId
     );
 
     res.json({
@@ -217,7 +197,6 @@ router.patch("/:id/provider-cancel", protect, async (req, res, next) => {
   }
 });
 
-
 // PATCH /api/book/:id/add-photo
 router.patch("/:id/add-photo", protect, async (req, res, next) => {
   try {
@@ -230,7 +209,6 @@ router.patch("/:id/add-photo", protect, async (req, res, next) => {
       { $push: { photos: photoUrl } },
       { new: true }
     );
-
     if (!booking)
       return res.status(404).json({ status: "error", message: "Booking not found" });
 

@@ -29,7 +29,8 @@ export default function RegisterScreen({ navigation }) {
         try {
             await register({ name, phone, password, sector });
         } catch (err) {
-            Alert.alert('Registration Failed', err.response?.data?.message || 'Kuch masla hua.');
+            const msg = err.response?.data?.message || 'Registration nahi hua. Try again.';
+            Alert.alert('Registration Failed', msg);
         } finally {
             setLoading(false);
         }
