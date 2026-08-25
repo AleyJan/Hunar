@@ -1,13 +1,9 @@
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, ".env") });
-const dns = require("dns");
-try {
-  dns.setDefaultResultOrder("ipv4first");
-} catch (e) {}
 
 const express = require("express");
 const cors = require("cors");
-const connectDB = require("./src/config/db");
+const mongoose = require("mongoose");
 
 const app = express();
 
@@ -21,21 +17,6 @@ app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`\n📥 [${timestamp}] ${req.method} ${req.originalUrl}`);
   next();
-});
-
-// Ensure DB is connected before handling API requests (critical for Vercel serverless)
-app.use(async (req, res, next) => {
-  if (req.path === "/api/health") return next();
-  try {
-    await connectDB();
-    next();
-  } catch (err) {
-    console.error("❌ Database connection middleware error:", err.message);
-    res.status(500).json({
-      status: "error",
-      message: "Database connection failure: " + err.message,
-    });
-  }
 });
 
 // ============================================================
@@ -88,27 +69,45 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================================
-// SERVER START (Local environment)
+// MONGODB + SERVER START
 // ============================================================
-if (process.env.VERCEL !== "1") {
-  const PORT = process.env.PORT || 5000;
-  connectDB()
-    .then(() => {
-      const server = app.listen(PORT, () => {
-        console.log(`🚀 HUNAR API running on port ${PORT}`);
-        console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
-      });
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI;
 
-      server.on("error", (err) => {
-        if (err.code === "EADDRINUSE") {
-          console.error(`❌ Port ${PORT} is busy.`);
-          process.exit(1);
-        }
-      });
-    })
-    .catch((err) => {
-      console.error("❌ Startup DB connection failed:", err.message);
-    });
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI not defined in .env — exiting");
+  process.exit(1);
 }
+
+mongoose
+  .connect(MONGO_URI)
+  .then(() => {
+    console.log("✅ MongoDB connected — Atlas cluster online");
+
+    const server = app.listen(PORT, () => {
+      console.log(`🚀 HUNAR API running on port ${PORT}`);
+      console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
+    });
+
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(`❌ Port ${PORT} is busy. Run this to fix it:`);
+        console.error(`   netstat -ano | findstr :${PORT}`);
+        console.error(`   taskkill /PID <number you see> /F`);
+        process.exit(1);
+      }
+    });
+
+    process.on("SIGINT", () => {
+      server.close(() => {
+        console.log("\n👋 Server closed cleanly");
+        process.exit(0);
+      });
+    });
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB connection failed:", err.message);
+    process.exit(1);
+  });
 
 module.exports = app;
