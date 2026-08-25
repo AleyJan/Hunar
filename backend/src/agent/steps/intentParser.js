@@ -148,6 +148,16 @@ Rules:
 - preferredTime is ALWAYS set to "ASAP"
 - NEVER ask about time under any circumstances`;
 
+// Extract sector locally from message
+const extractSector = (message) => {
+  const normalized = normalizeSectors(message);
+  for (const sector of VALID_ISLAMABAD_SECTORS) {
+    const regex = new RegExp(`\\b${sector.replace('-', '\\s*-?\\s*')}\\b`, 'i');
+    if (regex.test(normalized)) return sector;
+  }
+  return null;
+};
+
 const intentParser = async (message, context = {}) => {
   const startTime = Date.now();
 
@@ -157,6 +167,7 @@ const intentParser = async (message, context = {}) => {
   const language = detectLanguage(normalizedMessage);
   const localUrgency = detectUrgency(normalizedMessage);
   const localService = extractService(normalizedMessage);
+  const localSector = extractSector(normalizedMessage);
   const userBudget = extractBudget(normalizedMessage);
   const otherCity = detectOtherCity(normalizedMessage);
 
@@ -166,7 +177,7 @@ const intentParser = async (message, context = {}) => {
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "qwen/qwen3.6-27b",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: normalizedMessage },
@@ -190,12 +201,12 @@ const intentParser = async (message, context = {}) => {
     usedFallback = true;
     parsed = {
       service: localService,
-      sector: null,
+      sector: localSector,
       urgency: localUrgency,
       preferredTime: "ASAP",
       budgetSensitivity: userBudget ? "price_sensitive" : "normal",
       budgetAmount: userBudget,
-      confidence: localService ? 0.6 : 0.4,
+      confidence: (localService && localSector) ? 0.95 : localService ? 0.6 : 0.4,
       detectedLanguage: language,
       correctedMessage: normalizedMessage,
       jobComplexity: "basic",

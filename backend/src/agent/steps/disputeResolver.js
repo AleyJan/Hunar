@@ -47,7 +47,7 @@ Return ONLY valid JSON, no markdown, no newlines inside strings:
   let aiDecision;
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "qwen/qwen3.6-27b",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
       max_tokens: 500,

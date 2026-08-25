@@ -60,7 +60,7 @@ Return ONLY valid JSON with no extra text, no markdown, no explanation. Start wi
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "qwen/qwen3.6-27b",
       messages: [{ role: "user", content: groqPrompt }],
       temperature: 0.1,
       max_tokens: 300,
