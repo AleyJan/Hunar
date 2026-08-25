@@ -85,7 +85,14 @@ router.post("/login", async (req, res, next) => {
     }
 
     // Check users
-    const user = await User.findOne({ phone }).select("+password");
+    const user = await User.findOne({
+      $or: [
+        { phone: phone },
+        { phone: normalizedPhone },
+        { phone: phone.replace(/(\d{4})(\d{7})/, '$1-$2') }
+      ]
+    }).select("+password");
+
     if (!user || !(await user.comparePassword(password)))
       return res.status(401).json({ status: "error", message: "Invalid credentials" });
 
